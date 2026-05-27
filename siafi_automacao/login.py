@@ -22,7 +22,7 @@ month = datetime.today().strftime("%m")
 CAMINHO_ONEDRIVE  = '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Robo (IPU 2)/copia.xlsx'
 
 # Cópia local de trabalho — onde o robô vai ler e salvar durante a execução... ele é criado a partir do original do OneDrive e só é salvo no final, para evitar conflitos de acesso com o OneDrive
-CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao/data/copia.xlsx'
+CAMINHO_LOCAL     = 'data/copia.xlsx'
 
 # Destino final no OneDrive — arquivo de conferência gerado ao final
 CAMINHO_DESTINO   = '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Conferencia arquivo robo/Conferencia arquivo robo.xlsx'
@@ -175,7 +175,7 @@ for idx, row in df.iterrows():
         data_row['item'] = '0'
     data_row['valor_anulacao'] = int(round(float(row['Anular']), 2) * 100) if pd.notna(row['Anular']) else 0
     data_row['valor_aprovacao'] = int(round(float(row['Aprovar']), 2) * 100) if pd.notna(row['Aprovar']) else 0
-     
+
     ##Definição do valor a ser preenchido, dependendo se é anulação ou aprovação
     if pd.notna(row['Anular']):
         data_row['valor'] = int(round(float(row['Anular']), 2) * 100)
@@ -191,7 +191,7 @@ for idx, row in df.iterrows():
         print(f"realizando procedimento de anulação")
     elif data_row['valor_aprovacao'] != 0:
         print(f"realizando procedimento de aprovação")
-            
+
     if data_row['tipo_global'] == 'x':
         print(f"Processando UO: {data_row['uo']}, Grupo: {data_row['grupo']}, Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}")
     elif data_row['tipo_amarrado'] != '0':

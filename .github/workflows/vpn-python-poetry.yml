@@ -18,6 +18,10 @@ jobs:
       VPN_PASSWORD: ${{ secrets.VPN_PASSWORD }}
       VPN_VERIFY_URL: ${{ secrets.VPN_VERIFY_URL }}
       VPN_SERVER_CERT_PIN: ${{ secrets.VPN_SERVER_CERT_PIN }}
+      SISTEMA: ${{ secrets.SIAFI_SISTEMA }}
+      USUARIO: ${{ secrets.SIAFI_USUARIO }}
+      SENHA: ${{ secrets.SIAFI_SENHA }}
+      UNIDADE_EXECUTORA: ${{ secrets.SIAFI_UNIDADE_EXECUTORA }}
 
     steps:
       - name: Checkout repository
@@ -76,8 +80,7 @@ jobs:
         if: steps.vpn_connect.outputs.connected == 'true'
         run: |
           echo "VPN connected successfully. Starting the process..."
-          poetry run python -m my_pkg.main
-          curl -L https://www.grp-portal.mg.gov.br/
+          python siafi_automacao/cota_orcamentaria.py
 
       - name: Skip process because VPN failed
         if: steps.vpn_connect.outputs.connected != 'true'

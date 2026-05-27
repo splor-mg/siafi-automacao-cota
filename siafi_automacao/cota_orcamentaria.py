@@ -18,7 +18,7 @@ unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 month = datetime.today().strftime("%m")
 
 
-CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-cota/data/remanejamento.xlsx'
+CAMINHO_LOCAL     = 'data/remanejamento.xlsx'
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
@@ -145,7 +145,7 @@ for idx, row in df.iterrows():
         data_row['item'] = '0'
     data_row['valor_anulacao'] = int(round(float(row['Anular']), 2) * 100) if pd.notna(row['Anular']) else 0
     data_row['valor_aprovacao'] = int(round(float(row['Aprovar']), 2) * 100) if pd.notna(row['Aprovar']) else 0
-     
+
     ##Definição do valor a ser preenchido, dependendo se é anulação ou aprovação
     if pd.notna(row['Anular']):
         data_row['valor'] = int(round(float(row['Anular']), 2) * 100)
@@ -156,7 +156,7 @@ for idx, row in df.iterrows():
         print(f"realizando procedimento de anulação")
     elif data_row['valor_aprovacao'] != 0:
         print(f"realizando procedimento de aprovação")
-            
+
     if data_row['tipo_global'] == 'x':
         print(f"Processando UO: {data_row['uo']}, Grupo: {data_row['grupo']}, Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}")
     elif data_row['tipo_amarrado'] != '0':
