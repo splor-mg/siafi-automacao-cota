@@ -63,7 +63,7 @@ while tentativas < max_tentativas:
     time.sleep(1)
 
     try:
-        em.wait_for_field()
+        em.send_enter()
 
         # Tela COM campo editável — verifica se é a tela de sucesso
         if em.string_found(1, 13, 'Logon executado com sucesso'):
@@ -96,7 +96,7 @@ while tentativas < max_tentativas:
     time.sleep(1)
 
     try:
-        em.wait_for_field()
+        em.send_enter()
 
         # Tela COM campo editável — verifica se é a tela de sucesso
         if em.string_found(22, 11, 'Unidade Executora'):

@@ -18,7 +18,7 @@ unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 month = datetime.today().strftime("%m")
 
 
-CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao/data/remanejamento.xlsx'
+CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-cota/data/remanejamento.xlsx'
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
@@ -41,7 +41,7 @@ while tentativas < max_tentativas:
     time.sleep(1)
 
     try:
-        em.wait_for_field()
+        em.send_enter()
 
         # Tela COM campo editável — verifica se é a tela de sucesso
         if em.string_found(1, 13, 'Logon executado com sucesso'):
@@ -74,7 +74,7 @@ while tentativas < max_tentativas:
     time.sleep(1)
 
     try:
-        em.wait_for_field()
+        em.send_enter()
 
         # Tela COM campo editável — verifica se é a tela de sucesso
         if em.string_found(22, 11, 'Unidade Executora'):
