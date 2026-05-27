@@ -23,7 +23,7 @@ CAMINHO_LOCAL     = 'data/remanejamento.xlsx'
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
 
-em = Emulator(visible=True) ##caso queira que a tela apareça utilize visible=True
+em = Emulator(visible=False) ## use modo headless para ambientes sem interface gráfica
 em.connect('bhmvsb.prodemge.gov.br')
 em.wait_for_field()
 
