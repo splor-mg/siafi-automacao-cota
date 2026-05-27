@@ -32,14 +32,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install Poetry
+      - name: Install Python dependencies with pip
         run: |
           python -m pip install --upgrade pip
-          python -m pip install poetry
-
-      - name: Install dependencies with Poetry
-        run: |
-          poetry install --no-interaction --no-ansi --no-root
+          python -m pip install -r requirements.txt
 
       - name: Connect to VPN and verify
         id: vpn_connect
