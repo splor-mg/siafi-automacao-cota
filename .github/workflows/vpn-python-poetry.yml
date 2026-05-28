@@ -82,6 +82,7 @@ jobs:
         if: steps.vpn_connect.outputs.connected == 'true'
         run: |
           echo "VPN connected successfully. Starting the process..."
+          x3270 --help
           python siafi_automacao/cota_orcamentaria.py
 
       - name: Skip process because VPN failed
