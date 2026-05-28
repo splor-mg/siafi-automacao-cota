@@ -53,7 +53,7 @@ jobs:
           fi
 
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gettext openconnect
+          sudo apt-get install -y --no-install-recommends gettext openconnect x3270
 
           OPENCONNECT_ARGS=(--protocol=anyconnect --useragent 'AnyConnect' --user "$VPN_USER" --passwd-on-stdin --no-dtls)
           if [ -n "$VPN_SERVER_CERT_PIN" ]; then
