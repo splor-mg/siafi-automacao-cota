@@ -83,6 +83,7 @@ jobs:
         run: |
           echo "VPN connected successfully. Starting the process..."
           x3270 --help
+          python --version
           python siafi_automacao/cota_orcamentaria.py
 
       - name: Skip process because VPN failed
