@@ -7,17 +7,17 @@ permissions:
   contents: read
 
 jobs:
-  vpn-python-poetry:
-    name: Linux + Python + Poetry + VPN
+  run-process-vpn:
+    name: Run process through VPN
     runs-on: ubuntu-latest
 
     env:
       PYTHON_VERSION: '3.13'
-      VPN_URL: ${{ secrets.VPN_URL }}
+      VPN_OVPN_B64: ${{ secrets.VPN_OVPN_B64 }}
+      VPN_P12_B64: ${{ secrets.VPN_P12_B64 }}
+      VPN_TLS_KEY_B64: ${{ secrets.VPN_TLS_KEY_B64 }}
       VPN_USER: ${{ secrets.VPN_USER }}
       VPN_PASSWORD: ${{ secrets.VPN_PASSWORD }}
-      VPN_VERIFY_URL: ${{ secrets.VPN_VERIFY_URL }}
-      VPN_SERVER_CERT_PIN: ${{ secrets.VPN_SERVER_CERT_PIN }}
       SISTEMA: ${{ secrets.SIAFI_SISTEMA }}
       USUARIO: ${{ secrets.SIAFI_USUARIO }}
       SENHA: ${{ secrets.SIAFI_SENHA }}
@@ -40,53 +40,33 @@ jobs:
       - name: Install system dependencies for py3270
         run: |
           sudo apt-get update
-          sudo apt-get install -y s3270
+          sudo apt-get install -y s3270 openvpn curl netcat-openbsd
 
-      - name: Connect to VPN and verify
-        id: vpn_connect
-        continue-on-error: true
+      - name: Restore VPN files
         run: |
-          if [ -z "$VPN_URL" ] || [ -z "$VPN_USER" ] || [ -z "$VPN_PASSWORD" ] || [ -z "$VPN_VERIFY_URL" ]; then
-            echo "Missing required VPN secrets. Please configure VPN_URL, VPN_USER, VPN_PASSWORD and VPN_VERIFY_URL."
-            echo "connected=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          echo "${{ secrets.VPN_OVPN_B64 }}" | base64 -d > vpnserver-UDP4-1237-User-1237.ovpn
+          echo "${{ secrets.VPN_P12_B64 }}" | base64 -d > vpnserver-UDP4-1237-User-1237.p12
+          echo "${{ secrets.VPN_TLS_KEY_B64 }}" | base64 -d > vpnserver-UDP4-1237-User-1237-tls.key
+          chmod 600 vpnserver-UDP4-1237-User-1237.*
 
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gettext openconnect x3270
-          x3270 --help
+      - name: Connect VPN
+        run: |
+          printf "%s\n%s\n" \
+            "${{ secrets.VPN_USER }}" \
+            "${{ secrets.VPN_PASSWORD }}" > auth.txt
+          chmod 600 auth.txt
 
-          OPENCONNECT_ARGS=(--protocol=anyconnect --useragent 'AnyConnect' --user "$VPN_USER" --passwd-on-stdin --no-dtls)
-          if [ -n "$VPN_SERVER_CERT_PIN" ]; then
-            case "$VPN_SERVER_CERT_PIN" in
-              pin-sha256:*) OPENCONNECT_SERVER_CERT="$VPN_SERVER_CERT_PIN" ;;
-              sha256:*) OPENCONNECT_SERVER_CERT="pin-sha256:${VPN_SERVER_CERT_PIN#sha256:}" ;;
-              *) OPENCONNECT_SERVER_CERT="pin-sha256:$VPN_SERVER_CERT_PIN" ;;
-            esac
-            OPENCONNECT_ARGS+=(--servercert "$OPENCONNECT_SERVER_CERT")
-          else
-            OPENCONNECT_ARGS+=(--no-cert-check)
-          fi
+          sudo openvpn \
+            --config vpnserver-UDP4-1237-User-1237.ovpn \
+            --auth-user-pass auth.txt \
+            --daemon \
+            --log openvpn.log
 
-          printf '%s\n' "$VPN_PASSWORD" | sudo openconnect "${OPENCONNECT_ARGS[@]}" "$VPN_URL" --background --script /etc/vpnc/vpnc-script
-          sleep 20
-
-          if curl -sSfL "$VPN_VERIFY_URL" >/dev/null 2>&1; then
-            echo "connected=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "connected=false" >> "$GITHUB_OUTPUT"
-            echo "VPN connection verification failed. Check the VPN URL, credentials and VPN_VERIFY_URL."
-          fi
+          sleep 15
+          cat openvpn.log
+          ip addr
 
       - name: Run process only after VPN is connected
-        if: steps.vpn_connect.outputs.connected == 'true'
         run: |
           echo "VPN connected successfully. Starting the process..."
-          x3270 --help
-          python --version
           python siafi_automacao/cota_orcamentaria.py
-
-      - name: Skip process because VPN failed
-        if: steps.vpn_connect.outputs.connected != 'true'
-        run: |
-          echo "Skipping process because VPN was not connected successfully."
