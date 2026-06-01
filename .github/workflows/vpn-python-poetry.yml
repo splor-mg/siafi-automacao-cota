@@ -83,7 +83,7 @@ jobs:
       - name: Test VPN route
         run: |
           getent hosts bhmvsb.prodemge.gov.br
-          nc -vz bhmvsb.prodemge.gov.br 23
+          nc -vz bhmvsb.prodemge.gov.br 23melho
 
       - name: Run process only after VPN is connected
         run: |
