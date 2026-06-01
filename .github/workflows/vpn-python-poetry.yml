@@ -60,11 +60,30 @@ jobs:
             --config vpnserver-UDP4-1237-User-1237.ovpn \
             --auth-user-pass auth.txt \
             --daemon \
-            --log openvpn.log
+            --log openvpn.log \
+            --verb 4
 
-          sleep 15
+          for i in {1..30}; do
+            if sudo grep -q "Initialization Sequence Completed" openvpn.log; then
+              echo "VPN connected successfully."
+              sudo cat openvpn.log
+              ip addr
+              exit 0
+            fi
+
+            echo "Waiting for VPN connection..."
+            sleep 2
+          done
+
+          echo "VPN failed to connect."
           sudo cat openvpn.log
           ip addr
+          exit 1
+
+      - name: Test VPN route
+        run: |
+          getent hosts bhmvsb.prodemge.gov.br
+          nc -vz bhmvsb.prodemge.gov.br 23
 
       - name: Run process only after VPN is connected
         run: |
