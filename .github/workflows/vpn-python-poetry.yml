@@ -63,7 +63,7 @@ jobs:
             --log openvpn.log
 
           sleep 15
-          cat openvpn.log
+          sudo cat openvpn.log
           ip addr
 
       - name: Run process only after VPN is connected
