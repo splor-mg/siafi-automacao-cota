@@ -19,8 +19,15 @@ jobs:
         with:
           python-version: 3.12
 
-      - name: Install packages
-        run: pip install -r requirements.txt
+      - name: Install Python dependencies with pip
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Install system dependencies for py3270
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y s3270 openvpn curl netcat-openbsd
 
       - name: Run process only after VPN is connected
         run: python siafi_automacao/cota_orcamentaria.py
