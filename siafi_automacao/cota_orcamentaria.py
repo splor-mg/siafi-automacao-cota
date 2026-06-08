@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 from dotenv import load_dotenv
 from py3270 import Emulator
 from datetime import datetime
@@ -14,6 +15,16 @@ sistema = os.getenv('SISTEMA')
 usuario = os.getenv('USUARIO')
 senha = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
+
+def require_env(name, value):
+    if not value:
+        raise RuntimeError(f"Required environment variable '{name}' is not set.")
+    return value
+
+sistema = require_env('SISTEMA', sistema)
+usuario = require_env('USUARIO', usuario)
+senha = require_env('SENHA', senha)
+unidade_executora = require_env('UNIDADE_EXECUTORA', unidade_executora)
 
 month = datetime.today().strftime("%m")
 
@@ -62,6 +73,7 @@ while tentativas < max_tentativas:
 if tentativas == max_tentativas:
     print("Não foi possível fazer login após várias tentativas.")
     em.terminate()
+    sys.exit(1)
 
 em.fill_field(1, 2, sistema, 4)
 em.send_enter()
@@ -96,6 +108,7 @@ while tentativas < max_tentativas:
 if tentativas == max_tentativas:
     print("Não foi possível fazer login após várias tentativas.")
     em.terminate()
+    sys.exit(1)
 
 #Entrar com a Unidade Executora
 em.fill_field(22, 30, unidade_executora, 7)

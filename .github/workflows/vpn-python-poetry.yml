@@ -35,4 +35,9 @@ jobs:
           USUARIO: ${{ secrets.USUARIO }}
           SENHA: ${{ secrets.SENHA }}
           UNIDADE_EXECUTORA: ${{ secrets.UNIDADE_EXECUTORA }}
-        run: python siafi_automacao/cota_orcamentaria.py
+        run: |
+          : "${SISTEMA:?Missing required secret SISTEMA}"
+          : "${USUARIO:?Missing required secret USUARIO}"
+          : "${SENHA:?Missing required secret SENHA}"
+          : "${UNIDADE_EXECUTORA:?Missing required secret UNIDADE_EXECUTORA}"
+          python siafi_automacao/cota_orcamentaria.py
