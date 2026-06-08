@@ -9,83 +9,18 @@ permissions:
 jobs:
   run-process-vpn:
     name: Run process through VPN
-    runs-on: ubuntu-latest
-
-    env:
-      PYTHON_VERSION: '3.13'
-      VPN_OVPN_B64: ${{ secrets.VPN_OVPN_B64 }}
-      VPN_P12_B64: ${{ secrets.VPN_P12_B64 }}
-      VPN_TLS_KEY_B64: ${{ secrets.VPN_TLS_KEY_B64 }}
-      VPN_USER: ${{ secrets.VPN_USER }}
-      VPN_PASSWORD: ${{ secrets.VPN_PASSWORD }}
-      SISTEMA: ${{ secrets.SIAFI_SISTEMA }}
-      USUARIO: ${{ secrets.SIAFI_USUARIO }}
-      SENHA: ${{ secrets.SIAFI_SENHA }}
-      UNIDADE_EXECUTORA: ${{ secrets.SIAFI_UNIDADE_EXECUTORA }}
-
+    runs-on: teste
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Instalar Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: 3.12
 
-      - name: Install Python dependencies with pip
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Install system dependencies for py3270
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y s3270 openvpn curl netcat-openbsd
-
-      - name: Restore VPN files
-        run: |
-          echo "${{ secrets.VPN_OVPN_B64 }}" | base64 -d > vpnserver-UDP4-1237-User-1237.ovpn
-          echo "${{ secrets.VPN_P12_B64 }}" | base64 -d > vpnserver-UDP4-1237-User-1237.p12
-          echo "${{ secrets.VPN_TLS_KEY_B64 }}" | base64 -d > vpnserver-UDP4-1237-User-1237-tls.key
-          chmod 600 vpnserver-UDP4-1237-User-1237.*
-
-      - name: Connect VPN
-        run: |
-          printf "%s\n%s\n" \
-            "${{ secrets.VPN_USER }}" \
-            "${{ secrets.VPN_PASSWORD }}" > auth.txt
-          chmod 600 auth.txt
-
-          sudo openvpn \
-            --config vpnserver-UDP4-1237-User-1237.ovpn \
-            --auth-user-pass auth.txt \
-            --daemon \
-            --log openvpn.log \
-            --verb 4
-
-          for i in {1..30}; do
-            if sudo grep -q "Initialization Sequence Completed" openvpn.log; then
-              echo "VPN connected successfully."
-              sudo cat openvpn.log
-              ip addr
-              exit 0
-            fi
-
-            echo "Waiting for VPN connection..."
-            sleep 2
-          done
-
-          echo "VPN failed to connect."
-          sudo cat openvpn.log
-          ip addr
-          exit 1
-
-      - name: Test VPN route
-        run: |
-          getent hosts bhmvsb.prodemge.gov.br
-          nc -vz bhmvsb.prodemge.gov.br 23melho
+      - name: Install packages
+        run: pip install -r requirements.txt
 
       - name: Run process only after VPN is connected
-        run: |
-          echo "VPN connected successfully. Starting the process..."
-          python siafi_automacao/cota_orcamentaria.py
+        run: python siafi_automacao/cota_orcamentaria.py
