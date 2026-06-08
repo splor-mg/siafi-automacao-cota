@@ -16,15 +16,20 @@ usuario = os.getenv('USUARIO')
 senha = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 
-def require_env(name, value):
-    if not value:
+def require_env(name, value, max_length):
+    if value is None or not value.strip():
         raise RuntimeError(f"Required environment variable '{name}' is not set.")
+    value = value.strip()
+    if len(value) > max_length:
+        raise RuntimeError(
+            f"Environment variable '{name}' must be at most {max_length} characters; got {len(value)}."
+        )
     return value
 
-sistema = require_env('SISTEMA', sistema)
-usuario = require_env('USUARIO', usuario)
-senha = require_env('SENHA', senha)
-unidade_executora = require_env('UNIDADE_EXECUTORA', unidade_executora)
+sistema = require_env('SISTEMA', sistema, 4)
+usuario = require_env('USUARIO', usuario, 7)
+senha = require_env('SENHA', senha, 7)
+unidade_executora = require_env('UNIDADE_EXECUTORA', unidade_executora, 7)
 
 month = datetime.today().strftime("%m")
 
