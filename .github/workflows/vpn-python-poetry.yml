@@ -30,4 +30,9 @@ jobs:
           sudo apt-get install -y s3270 openvpn curl netcat-openbsd
 
       - name: Run process only after VPN is connected
+        env:
+          SISTEMA: ${{ secrets.SISTEMA }}
+          USUARIO: ${{ secrets.USUARIO }}
+          SENHA: ${{ secrets.SENHA }}
+          UNIDADE_EXECUTORA: ${{ secrets.UNIDADE_EXECUTORA }}
         run: python siafi_automacao/cota_orcamentaria.py
