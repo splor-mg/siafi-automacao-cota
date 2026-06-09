@@ -52,6 +52,7 @@ def aprovar(em, data_row):
         retorno = em.string_get(1, 1, 80).strip()
         if retorno in (
             "0139- VALOR A APROVAR MAIOR QUE SALDO DISPONIVEL NO PROJ/ATIV.",
+            "0139- PROGRAMA DE TRABALHO NAO ENCONTRADO PARA GM/FP.",
             "0139- PROJ/ATIV OU FONTE/PROC./IAG INEXISTENTE PARA UO", 
             "SALDO DE CREDITO ORCAMENTARIO A APROVAR POR PROJ/ATIV ZERADO."
         ):
