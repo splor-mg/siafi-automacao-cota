@@ -1,8 +1,10 @@
 import os
 import glob
 import shutil
+import subprocess
+import sys
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 from py3270 import Emulator
@@ -22,33 +24,21 @@ usuario           = os.getenv('USUARIO')
 senha             = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 
+_onedrive_base = os.getenv('ONEDRIVE_BASE')
+
 month = datetime.today().strftime("%m")
 
 # Pasta de ORIGEM (OneDrive sincronizado) de onde o arquivo a processar e
 # MOVIDO para a pasta local. O caminho do Windows  C:\Users\...  e acessado
 # a partir do WSL via /mnt/c/...
-PASTA_ORIGEM = (
-    '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/'
-    'Robo - Remanejamento e aprovacao de cota/Robo (IPU 2)/Python'
-)
-
-# Pasta de DESTINO (OneDrive) para onde o arquivo processado e MOVIDO ao
-# final, para conferencia.
-PASTA_DESTINO = (
-    '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/'
-    'Robo - Remanejamento e aprovacao de cota/Conferencia arquivo robo'
-)
-
-# Pasta Realizados e sua subpasta de destino para organizacao pos-execucao.
-PASTA_REALIZADOS = (
-    '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/'
-    'Robo - Remanejamento e aprovacao de cota/Realizados'
-)
-PASTA_REMANEJAMENTOS_REALIZADOS = os.path.join(PASTA_REALIZADOS, 'Remanejamentos realizados')
+PASTA_ORIGEM                    = os.path.join(_onedrive_base, 'Robo (IPU 2)', 'Python')
+PASTA_DESTINO                   = os.path.join(_onedrive_base, 'Conferencia arquivo robo')
+PASTA_REALIZADOS                = os.path.join(_onedrive_base, 'Realizados')
+PASTA_REMANEJAMENTOS_REALIZADOS = os.path.join(_onedrive_base, 'Realizados', 'Remanejamentos realizados')
 
 # Pasta local (Linux/WSL) onde o robo realmente atua, para nao depender da
 # sincronizacao do OneDrive enquanto grava.
-PASTA_LOCAL = '/home/guilhermemelof/code/splor-mg/siafi-automacao-cota/data'
+PASTA_LOCAL = os.getenv('PASTA_LOCAL')
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +268,67 @@ def montar_data_row(get, month):
 if __name__ == "__main__":
 
     # -----------------------------------------------------------------------
+    # 0) Executa consolida.py, aguarda o arquivo ficar disponível e pede
+    #    confirmação antes de iniciar o fluxo no SIAFI.
+    # -----------------------------------------------------------------------
+    script_consolida = os.path.join(os.path.dirname(__file__), 'consolida.py')
+    print("Executando consolida.py...")
+    subprocess.run([sys.executable, script_consolida], check=True)
+
+    hoje = date.today()
+    nome_conferencia = (
+        f'Conferencia arquivo robo {hoje.day:02d}.{hoje.month:02d}.xlsx'
+    )
+    caminho_conferencia = os.path.join(PASTA_ORIGEM, nome_conferencia)
+
+    print("Aguardando o arquivo de conferência ficar disponível...", end='', flush=True)
+    disponivel = False
+    for _ in range(30):
+        if os.path.exists(caminho_conferencia):
+            try:
+                open(caminho_conferencia, 'rb').close()
+                disponivel = True
+                break
+            except OSError:
+                pass
+        print('.', end='', flush=True)
+        time.sleep(2)
+    print()
+
+    if disponivel:
+        caminho_windows = caminho_conferencia.replace('/mnt/c/', 'C:\\').replace('/', '\\')
+        subprocess.Popen(
+            ['cmd.exe', '/c', 'start', '', caminho_windows],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        print(f"Arquivo aberto: {caminho_windows}")
+    else:
+        print("[aviso] Arquivo de conferência não encontrado após 60s.")
+
+    resposta = ''
+    while resposta not in ('s', 'n'):
+        resposta = input("Deseja continuar com o fluxo no SIAFI? (s/n): ").strip().lower()
+
+    if resposta == 'n':
+        print("Fluxo cancelado pelo usuário.")
+        raise SystemExit(0)
+
+    if disponivel:
+        nome_conferencia_win = os.path.basename(caminho_conferencia)
+        ps_cmd = (
+            '$xl = $null; '
+            'try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application") } catch {}; '
+            f'if ($xl) {{ $xl.Workbooks | Where-Object {{ $_.Name -eq "{nome_conferencia_win}" }} '
+            '| ForEach-Object { $_.Close($false) }; '
+            'if ($xl.Workbooks.Count -eq 0) { $xl.Quit() } }'
+        )
+        subprocess.run(
+            ['powershell.exe', '-Command', ps_cmd],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        print(f"Arquivo de conferência fechado.")
+
+    # -----------------------------------------------------------------------
     # 1) Move o arquivo da pasta de origem para a pasta local e abre a copia
     # -----------------------------------------------------------------------
     os.makedirs(PASTA_LOCAL, exist_ok=True)
@@ -331,9 +382,9 @@ if __name__ == "__main__":
         em.terminate()
         time.sleep(1)
 
-    em.fill_field(19, 13, sistema, 7)
-    em.fill_field(20, 13, usuario, 7)
-    em.fill_field(21, 13, senha, 7)
+    em.fill_field(19, 13, sistema, 8)
+    em.fill_field(20, 13, usuario, 8)
+    em.fill_field(21, 13, senha, 8)
     em.send_enter()
 
     max_tentativas = 10

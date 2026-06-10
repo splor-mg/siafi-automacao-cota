@@ -18,7 +18,7 @@ unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 month = datetime.today().strftime("%m")
 
 
-CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-cota/data/remanejamento.xlsx'
+CAMINHO_LOCAL = os.path.join(os.getenv('PASTA_LOCAL'), 'remanejamento.xlsx')
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
