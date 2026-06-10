@@ -23,9 +23,17 @@ CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-cota/dat
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
 
-em = Emulator(visible=True) ##caso queira que a tela apareça utilize visible=True
-em.connect('bhmvsb.prodemge.gov.br')
-em.wait_for_field()
+while True:
+    em = Emulator(visible=True)  # use visible=False para rodar sem janela
+    em.connect('bhmvsb.prodemge.gov.br')
+    em.wait_for_field()
+
+    if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
+        break
+
+    print("Não foi possível estabelecer conexão com o servidor. Tentando novamente...")
+    em.terminate()
+    time.sleep(1)
 
 # Preenche os dados de login
 em.fill_field(19, 13, sistema, 7)
