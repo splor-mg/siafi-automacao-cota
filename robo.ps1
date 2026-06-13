@@ -17,10 +17,15 @@ function Test-UbuntuInstalled {
 
 function Test-SetupDone {
     <#
-    Retorna $true se o arquivo sentinela .setup_done existir dentro do Ubuntu.
-    O ~ é expandido pelo próprio bash dentro do WSL, usando o usuário padrão.
+    Retorna $true se o sentinela .setup_done existe E o .env tem ONEDRIVE_BASE.
+    Se o .env estiver incompleto (ex: atualização do login.py adicionou novas
+    variáveis), o setup.sh re-executa apenas para coletar as vars ausentes —
+    as etapas pesadas (apt, clone, venv) são idempotentes e são puladas.
     #>
-    wsl -d Ubuntu -- bash -c "test -f ~/code/splor-mg/siafi-automacao-cota/.setup_done" 2>$null
+    wsl -d Ubuntu -- bash -c "
+        test -f ~/code/splor-mg/siafi-automacao-cota/.setup_done &&
+        grep -q '^ONEDRIVE_BASE=' ~/code/splor-mg/siafi-automacao-cota/.env 2>/dev/null
+    " 2>$null
     return $LASTEXITCODE -eq 0
 }
 
