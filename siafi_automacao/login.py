@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import shutil
 import subprocess
@@ -274,17 +275,13 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     script_consolida = os.path.join(os.path.dirname(__file__), 'consolida.py')
     print("Executando consolida.py...")
-    subprocess.run(['python', script_consolida], check=True)
+    subprocess.run([sys.executable, script_consolida], check=True)
 
     hoje = date.today()
     nome_conferencia = (
         f'Conferencia arquivo robo {hoje.day:02d}.{hoje.month:02d}.xlsx'
     )
-    caminho_conferencia = os.path.join(
-        '/mnt/c/Users/m1265096/OneDrive - CAMG/@splor/@dcmefo/2026/'
-        'Robo - Remanejamento e aprovacao de cota/Robo (IPU 2)/Python',
-        nome_conferencia,
-    )
+    caminho_conferencia = os.path.join(PASTA_ORIGEM, nome_conferencia)
 
     print("Aguardando o arquivo de conferência ficar disponível...", end='', flush=True)
     disponivel = False

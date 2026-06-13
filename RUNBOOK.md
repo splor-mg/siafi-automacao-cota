@@ -27,20 +27,23 @@ Antes de usar o robô pela primeira vez, confirme que você tem:
 
 ### Uso diário (sistema já configurado)
 
-1. Coloque a planilha Excel na pasta do OneDrive:
+1. Salve o(s) arquivo(s) Excel de remanejamento em uma das pastas do OneDrive:
    ```
-   @splor/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Robo (IPU 2)/Python
+   @splor/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Remanejamentos
+   @splor/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Remanejamentos (SEGOV)
    ```
 
 2. Dê **duplo-clique** em `robo.bat`
 
-3. Uma janela preta abre e o robô inicia automaticamente
+3. Uma janela preta abre. O robô consolida automaticamente os arquivos de remanejamento e gera o arquivo de conferência
 
-4. Quando solicitado, confirme se deseja continuar digitando `s` e pressionando Enter
+4. O arquivo de conferência abre no Excel — **revise antes de continuar**
 
-5. Aguarde. O robô processa cada linha da planilha e exibe o resultado na tela
+5. De volta à janela preta, confirme digitando `s` e pressionando Enter
 
-6. Ao terminar, a planilha é movida automaticamente para a pasta de conferência:
+6. Aguarde. O robô processa cada linha no SIAFI e exibe o resultado na tela
+
+7. Ao terminar, a planilha processada é movida automaticamente para:
    ```
    @splor/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Conferencia arquivo robo
    ```
