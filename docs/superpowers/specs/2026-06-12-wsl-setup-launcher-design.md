@@ -65,7 +65,8 @@ Executado dentro do Ubuntu via `wsl -d Ubuntu -- bash /mnt/c/.../setup.sh`. Conf
                            │
                     Executa o robô
          wsl -d Ubuntu -- bash -c
-         "source venv/bin/activate &&
+         "cd ~/code/splor-mg/siafi-automacao-cota &&
+          source venv/bin/activate &&
           python siafi_automacao/login.py"
 ```
 
@@ -126,6 +127,14 @@ touch .setup_done
 - A senha SIAFI fica em texto plano no `.env` dentro do WSL — aceitável dado o contexto de uso (máquina pessoal, acesso local)
 - O `robo.bat` solicita elevação UAC apenas na fase de instalação do WSL; nas execuções seguintes roda sem admin
 - O `setup.sh` é referenciado pelo PowerShell via `/mnt/c/` — o diretório do projeto no Windows deve estar acessível
+
+### WSLg (janela gráfica do x3270)
+
+`login.py` usa `Emulator(visible=True)`, que abre a janela gráfica do `x3270`. Isso depende do **WSLg**, disponível nativamente no Windows 11 com WSL2. Em Windows 10 ou WSL1 a janela não abre e o script falhará. O `setup.sh` deve verificar a versão do WSL e avisar caso WSLg não esteja disponível, sugerindo alterar para `visible=False` no `login.py` para modo headless.
+
+### Caminhos hardcoded em `login.py`
+
+As variáveis `PASTA_ORIGEM`, `PASTA_DESTINO`, `PASTA_REALIZADOS` e o caminho do arquivo de conferência em `login.py` contêm o nome do usuário Windows (`m1265096`) fixo no código. O `setup.sh` **não corrige isso automaticamente** — é uma limitação conhecida que exige edição manual do `login.py` ao usar em outra máquina com usuário Windows diferente. Fora do escopo desta automação.
 
 ---
 
