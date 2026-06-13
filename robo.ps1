@@ -8,8 +8,9 @@ function Test-UbuntuInstalled {
     <#
     Retorna $true se a distro Ubuntu estiver registrada no WSL.
     Usa -match case-insensitive para cobrir "Ubuntu", "Ubuntu-22.04", etc.
+    wsl --list --quiet emite UTF-16 LE; remove bytes nulos antes de comparar.
     #>
-    $distros = wsl --list --quiet 2>$null
+    $distros = (wsl --list --quiet 2>$null) -replace '\x00', ''
     if ($LASTEXITCODE -ne 0) { return $false }
     return ($distros -join "`n") -match "ubuntu"
 }
@@ -43,6 +44,9 @@ function ConvertTo-WslPath {
     Converte um caminho Windows (ex: C:\Users\foo\bar) para caminho WSL (/mnt/c/Users/foo/bar).
     #>
     param([string]$WindowsPath)
+    if ($WindowsPath -match '^\\\\') {
+        throw "ConvertTo-WslPath: caminhos UNC não são suportados: $WindowsPath"
+    }
     $drive = $WindowsPath[0].ToString().ToLower()
     $rest  = $WindowsPath.Substring(2).Replace("\", "/")
     return "/mnt/$drive$rest"
@@ -63,6 +67,13 @@ if (-not (Test-UbuntuInstalled)) {
 
     Write-Host "Executando: wsl --install -d Ubuntu" -ForegroundColor Yellow
     wsl --install -d Ubuntu
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "ERRO: wsl --install falhou (código $LASTEXITCODE)." -ForegroundColor Red
+        Write-Host "Verifique se a virtualização está habilitada na BIOS e tente novamente." -ForegroundColor Red
+        exit 1
+    }
 
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Green
