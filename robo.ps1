@@ -92,7 +92,7 @@ if (-not (Test-SetupDone)) {
     $setupWin = Join-Path $PSScriptRoot "setup.sh"
     $setupWsl = ConvertTo-WslPath $setupWin
 
-    wsl -d Ubuntu -- bash "$setupWsl"
+    wsl -d Ubuntu -- bash -c "bash '$setupWsl'"
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
@@ -113,3 +113,5 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "O robô encerrou com erro (código $LASTEXITCODE)." -ForegroundColor Red
 }
+
+exit $LASTEXITCODE
