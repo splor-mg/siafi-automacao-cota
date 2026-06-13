@@ -39,6 +39,16 @@ function Request-Elevation {
     }
 }
 
+function Test-WslEngineActive {
+    <#
+    Retorna $true se a engine WSL2 já está ativa no sistema (independente de
+    haver distros registradas). Usado para saber se um reboot é necessário após
+    wsl --install -d Ubuntu: se a engine já estava ativa, não é.
+    #>
+    wsl --status 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+}
+
 function ConvertTo-WslPath {
     <#
     Converte um caminho Windows (ex: C:\Users\foo\bar) para caminho WSL (/mnt/c/Users/foo/bar).
@@ -60,10 +70,17 @@ Write-Host ""
 Write-Host "=== Robô SIAFI ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Fase 1: WSL + Ubuntu não instalados
+# Fase 1: Ubuntu não registrado no WSL
 if (-not (Test-UbuntuInstalled)) {
-    Write-Host "Ubuntu/WSL não encontrado. Iniciando instalação..." -ForegroundColor Yellow
-    Request-Elevation   # re-lança como admin se necessário (não retorna)
+    $wslJaAtivo = Test-WslEngineActive
+
+    if ($wslJaAtivo) {
+        Write-Host "WSL já instalado, mas Ubuntu não encontrado. Registrando Ubuntu..." -ForegroundColor Yellow
+    } else {
+        Write-Host "WSL não encontrado. Instalando WSL e Ubuntu..." -ForegroundColor Yellow
+    }
+
+    Request-Elevation   # re-lança como admin se necessário (não retorna se não for admin)
 
     Write-Host "Executando: wsl --install -d Ubuntu" -ForegroundColor Yellow
     wsl --install -d Ubuntu
@@ -75,12 +92,21 @@ if (-not (Test-UbuntuInstalled)) {
         exit 1
     }
 
+    if (-not $wslJaAtivo) {
+        # Engine WSL foi instalada agora — reboot obrigatório para ativar virtualização
+        Write-Host ""
+        Write-Host "============================================================" -ForegroundColor Green
+        Write-Host "  WSL e Ubuntu instalados com sucesso!"                       -ForegroundColor Green
+        Write-Host "  REINICIE o Windows e clique em robo.bat novamente."         -ForegroundColor Green
+        Write-Host "============================================================" -ForegroundColor Green
+        exit 0
+    }
+
+    # WSL já estava ativo — Ubuntu acabou de ser registrado, sem reboot necessário.
+    # O Ubuntu abrirá para configuração de usuário/senha na Fase 2.
     Write-Host ""
-    Write-Host "============================================================" -ForegroundColor Green
-    Write-Host "  WSL e Ubuntu instalados com sucesso!"                       -ForegroundColor Green
-    Write-Host "  REINICIE o Windows e clique em robo.bat novamente."         -ForegroundColor Green
-    Write-Host "============================================================" -ForegroundColor Green
-    exit 0
+    Write-Host "Ubuntu registrado. Prosseguindo com a configuração..." -ForegroundColor Green
+    Write-Host ""
 }
 
 # Fase 2: Ubuntu instalado mas projeto não configurado
