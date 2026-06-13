@@ -35,8 +35,8 @@ if [ ! -d "$REPO_DIR/.git" ]; then
         echo "(O token não aparecerá na tela)"
         read -rs GH_TOKEN
         echo ""
-        TOKEN_URL="https://${GH_TOKEN}@github.com/splor-mg/siafi-automacao-cota.git"
-        git clone "$TOKEN_URL" "$REPO_DIR"
+        git -c "url.https://${GH_TOKEN}@github.com/.insteadOf=https://github.com/" \
+            clone "$REPO_URL" "$REPO_DIR"
         echo "Clone concluído."
     fi
 else
@@ -90,12 +90,9 @@ if [ ! -f ".env" ]; then
     echo ""
     read -rp  "  UNIDADE_EXECUTORA (ex: 1451): " UNIDADE_EXECUTORA
 
-    cat > .env <<EOF
-SISTEMA=${SISTEMA}
-USUARIO=${USUARIO}
-SENHA=${SENHA}
-UNIDADE_EXECUTORA=${UNIDADE_EXECUTORA}
-EOF
+    printf 'SISTEMA=%s\nUSUARIO=%s\nSENHA=%s\nUNIDADE_EXECUTORA=%s\n' \
+        "$SISTEMA" "$USUARIO" "$SENHA" "$UNIDADE_EXECUTORA" > .env
+    chmod 600 .env
     echo ""
     echo "Arquivo .env criado com sucesso."
 else
