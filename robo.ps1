@@ -51,14 +51,25 @@ function Test-WslEngineActive {
 
 function ConvertTo-WslPath {
     <#
-    Converte um caminho Windows (ex: C:\Users\foo\bar) para caminho WSL (/mnt/c/Users/foo/bar).
+    Converte um caminho Windows para caminho WSL.
+    Trata dois casos:
+      - Caminho normal: C:\Users\foo\bar  →  /mnt/c/Users/foo/bar
+      - UNC do WSL:     \\wsl.localhost\Ubuntu\home\foo  →  /home/foo
+        (ocorre quando o script é executado a partir do filesystem WSL)
     #>
     param([string]$WindowsPath)
-    if ($WindowsPath -match '^\\\\') {
-        throw "ConvertTo-WslPath: caminhos UNC não são suportados: $WindowsPath"
+
+    if ($WindowsPath -match '^\\\\wsl\.localhost\\[^\\]+\\(.*)$') {
+        # \\wsl.localhost\<distro>\<path> → /<path>
+        return '/' + $Matches[1].Replace('\', '/')
     }
+
+    if ($WindowsPath -match '^\\\\') {
+        throw "ConvertTo-WslPath: caminho UNC não suportado: $WindowsPath"
+    }
+
     $drive = $WindowsPath[0].ToString().ToLower()
-    $rest  = $WindowsPath.Substring(2).Replace("\", "/")
+    $rest  = $WindowsPath.Substring(2).Replace('\', '/')
     return "/mnt/$drive$rest"
 }
 
