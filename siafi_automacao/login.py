@@ -1,12 +1,15 @@
 import os
 import glob
 import shutil
+import subprocess
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 from py3270 import Emulator
 from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from fluxo_anular import anular
 from fluxo_aprovar import aprovar
@@ -20,26 +23,23 @@ usuario           = os.getenv('USUARIO')
 senha             = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 
+_onedrive_base = os.getenv('ONEDRIVE_BASE')
+siafi_host     = os.getenv('SIAFI_HOST', 'bhmvsb.prodemge.gov.br')
+siafi_visivel  = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
+
 month = datetime.today().strftime("%m")
 
 # Pasta de ORIGEM (OneDrive sincronizado) de onde o arquivo a processar e
-# MOVIDO para a pasta local. O caminho do Windows  C:\Users\...  e acessado
+# MOVIDO para a pasta local. O caminho do Windows  C:/Users/...  e acessado
 # a partir do WSL via /mnt/c/...
-PASTA_ORIGEM = (
-    '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/'
-    'Robo - Remanejamento e aprovacao de cota/Robo (IPU 2)/Python'
-)
-
-# Pasta de DESTINO (OneDrive) para onde o arquivo processado e MOVIDO ao
-# final, para conferencia.
-PASTA_DESTINO = (
-    '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/'
-    'Robo - Remanejamento e aprovacao de cota/Conferencia arquivo robo'
-)
+PASTA_ORIGEM                    = os.path.join(_onedrive_base, 'Robo (IPU 2)', 'Python')
+PASTA_DESTINO                   = os.path.join(_onedrive_base, 'Conferencia arquivo robo')
+PASTA_REALIZADOS                = os.path.join(_onedrive_base, 'Realizados')
+PASTA_REMANEJAMENTOS_REALIZADOS = os.path.join(_onedrive_base, 'Realizados', 'Remanejamentos realizados')
 
 # Pasta local (Linux/WSL) onde o robo realmente atua, para nao depender da
 # sincronizacao do OneDrive enquanto grava.
-PASTA_LOCAL = '/home/guilhermemelof/code/splor-mg/siafi-automacao-cota/data'
+PASTA_LOCAL = os.getenv('PASTA_LOCAL')
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,28 @@ def mover(origem, destino):
     que o shutil.move faz copy2 + remove em vez de um rename simples."""
     if os.path.exists(destino):
         os.remove(destino)
-    shutil.move(origem, destino)
+    shutil.move(origem, destino, copy_function=shutil.copyfile)
+
+
+def organizar_realizados(pasta_origem, pasta_destino):
+    """Move os .xlsx soltos em 'pasta_origem' para 'pasta_destino'.
+    Se ja existir um arquivo com o mesmo nome, adiciona sufixo (1), (2), etc."""
+    os.makedirs(pasta_destino, exist_ok=True)
+    arquivos = [
+        f for f in os.listdir(pasta_origem)
+        if f.endswith('.xlsx') and os.path.isfile(os.path.join(pasta_origem, f))
+    ]
+    for nome in arquivos:
+        origem = os.path.join(pasta_origem, nome)
+        destino = os.path.join(pasta_destino, nome)
+        if os.path.exists(destino):
+            base, ext = os.path.splitext(nome)
+            contador = 1
+            while os.path.exists(destino):
+                destino = os.path.join(pasta_destino, f"{base} ({contador}){ext}")
+                contador += 1
+        shutil.move(origem, destino, copy_function=shutil.copyfile)
+        print(f"Organizando: {nome} -> {os.path.basename(destino)}")
 
 
 def localizar_arquivo(pasta):
@@ -109,6 +130,8 @@ def traduzir_progresso(retorno):
     mapa = {
         "0139- VALOR A APROVAR MAIOR QUE SALDO DISPONIVEL NO PROJ/ATIV.":
             'Valor a aprovar maior que o saldo disponível',
+        "0139- PROGRAMA DE TRABALHO NAO ENCONTRADO PARA GM/FP.":
+            'Programa de trabalho não encontrado para GM/FP',
         "0139- VALORES A ANULAR MAIOR QUE SALDO DISPONIVEL.":
             'Valor a anular maior que o saldo disponível',
         "0139- PROJ/ATIV OU FONTE/PROC./IAG INEXISTENTE PARA UO":
@@ -123,6 +146,85 @@ def traduzir_progresso(retorno):
     return mapa.get(retorno, 'Ok')
 
 
+def formatar_planilha(ws):
+    """Aplica formatacao visual gerencial na aba: cabecalho colorido, valores
+    numericos formatados, zebra nas linhas, coluna Progresso com cor condicional
+    e larguras ajustadas ao conteudo."""
+    AZUL_ESCURO  = PatternFill('solid', fgColor='1F4E79')
+    AZUL_CLARO   = PatternFill('solid', fgColor='D6E4F0')
+    BRANCO       = PatternFill('solid', fgColor='FFFFFF')
+    VERDE        = PatternFill('solid', fgColor='C6EFCE')
+    AMARELO      = PatternFill('solid', fgColor='FFEB9C')
+    VERMELHO     = PatternFill('solid', fgColor='FFC7CE')
+    FONTE_BRANCA = Font(bold=True, color='FFFFFF', name='Calibri', size=11)
+    FONTE_NORMAL = Font(name='Calibri', size=10)
+    BORDA = Border(
+        left=Side(style='thin', color='BFBFBF'),
+        right=Side(style='thin', color='BFBFBF'),
+        top=Side(style='thin', color='BFBFBF'),
+        bottom=Side(style='thin', color='BFBFBF'),
+    )
+    COLS_VALOR = {'Anular', 'Aprovar'}
+
+    max_col = ws.max_column
+    max_row = ws.max_row
+
+    # Mapeia nome da coluna -> indice
+    cabec = {ws.cell(row=1, column=c).value: c for c in range(1, max_col + 1)}
+
+    # Remove linhas de grade
+    ws.sheet_view.showGridLines = False
+
+    # Cabecalho
+    for c in range(1, max_col + 1):
+        cell = ws.cell(row=1, column=c)
+        cell.fill   = AZUL_ESCURO
+        cell.font   = FONTE_BRANCA
+        cell.border = BORDA
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
+    ws.row_dimensions[1].height = 20
+
+    # Linhas de dados
+    for r in range(2, max_row + 1):
+        zebra = AZUL_CLARO if r % 2 == 0 else BRANCO
+        for c in range(1, max_col + 1):
+            cell      = ws.cell(row=r, column=c)
+            cell.fill = zebra
+            cell.font = FONTE_NORMAL
+            cell.border = BORDA
+
+            col_nome = ws.cell(row=1, column=c).value
+
+            # Formata colunas de valor monetario (alinha direita)
+            if col_nome in COLS_VALOR and cell.value not in (None, ''):
+                cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal='right', vertical='center')
+            else:
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        # Cor condicional na coluna Progresso
+        if 'Progresso' in cabec:
+            prog_cell = ws.cell(row=r, column=cabec['Progresso'])
+            valor = (prog_cell.value or '').strip()
+            if valor == 'Ok':
+                prog_cell.fill = VERDE
+            elif valor != '':
+                prog_cell.fill = VERMELHO if 'zerado' in valor.lower() or 'maior' in valor.lower() or 'inexistente' in valor.lower() else AMARELO
+
+    # Congela a primeira linha
+    ws.freeze_panes = 'A2'
+
+    # Ajusta largura: usa o maior entre o titulo do cabecalho e o conteudo
+    for c in range(1, max_col + 1):
+        col_letter = get_column_letter(c)
+        max_len = 0
+        for r in range(1, max_row + 1):
+            val = ws.cell(row=r, column=c).value
+            if val is not None:
+                max_len = max(max_len, len(str(val)))
+        ws.column_dimensions[col_letter].width = min(max(max_len + 4, 10), 50)
+
+
 def montar_data_row(get, month):
     """Monta o dicionario data_row a partir de uma linha da planilha.
     'get' e uma funcao que recebe o nome da coluna e devolve o valor da celula."""
@@ -135,7 +237,7 @@ def montar_data_row(get, month):
     dr['acao']        = _txt_int(get('Ação'))
 
     g = get('GLOBAL')
-    dr['tipo_global'] = g.strip() if (isinstance(g, str) and g.strip() != '') else '0'
+    dr['tipo_global'] = g.strip().lower() if (isinstance(g, str) and g.strip() != '') else '0'
 
     am = get('AMARRADO')
     if not _vazio(am):
@@ -165,6 +267,71 @@ def montar_data_row(get, month):
 # Execucao
 # ===========================================================================
 if __name__ == "__main__":
+
+    # -----------------------------------------------------------------------
+    # 0) Executa consolida.py, aguarda o arquivo ficar disponível e pede
+    #    confirmação antes de iniciar o fluxo no SIAFI.
+    # -----------------------------------------------------------------------
+    script_consolida = os.path.join(os.path.dirname(__file__), 'consolida.py')
+    print("Executando consolida.py...")
+    subprocess.run(['python', script_consolida], check=True)
+
+    hoje = date.today()
+    nome_conferencia = (
+        f'Conferencia arquivo robo {hoje.day:02d}.{hoje.month:02d}.xlsx'
+    )
+    caminho_conferencia = os.path.join(
+        '/mnt/c/Users/m1265096/OneDrive - CAMG/@splor/@dcmefo/2026/'
+        'Robo - Remanejamento e aprovacao de cota/Robo (IPU 2)/Python',
+        nome_conferencia,
+    )
+
+    print("Aguardando o arquivo de conferência ficar disponível...", end='', flush=True)
+    disponivel = False
+    for _ in range(30):
+        if os.path.exists(caminho_conferencia):
+            try:
+                open(caminho_conferencia, 'rb').close()
+                disponivel = True
+                break
+            except OSError:
+                pass
+        print('.', end='', flush=True)
+        time.sleep(2)
+    print()
+
+    if disponivel:
+        caminho_windows = caminho_conferencia.replace('/mnt/c/', 'C:\\').replace('/', '\\')
+        subprocess.Popen(
+            ['cmd.exe', '/c', 'start', '', caminho_windows],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        print(f"Arquivo aberto: {caminho_windows}")
+    else:
+        print("[aviso] Arquivo de conferência não encontrado após 60s.")
+
+    resposta = ''
+    while resposta not in ('s', 'n'):
+        resposta = input("Deseja continuar com o fluxo no SIAFI? (s/n): ").strip().lower()
+
+    if resposta == 'n':
+        print("Fluxo cancelado pelo usuário.")
+        raise SystemExit(0)
+
+    if disponivel:
+        nome_conferencia_win = os.path.basename(caminho_conferencia)
+        ps_cmd = (
+            '$xl = $null; '
+            'try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application") } catch {}; '
+            f'if ($xl) {{ $xl.Workbooks | Where-Object {{ $_.Name -eq "{nome_conferencia_win}" }} '
+            '| ForEach-Object { $_.Close($false) }; '
+            'if ($xl.Workbooks.Count -eq 0) { $xl.Quit() } }'
+        )
+        subprocess.run(
+            ['powershell.exe', '-Command', ps_cmd],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        print(f"Arquivo de conferência fechado.")
 
     # -----------------------------------------------------------------------
     # 1) Move o arquivo da pasta de origem para a pasta local e abre a copia
@@ -208,13 +375,21 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # 3) Login no SIAFI
     # -----------------------------------------------------------------------
-    em = Emulator(visible=True)  # use visible=False para rodar sem janela
-    em.connect('bhmvsb.prodemge.gov.br')
-    em.wait_for_field()
+    while True:
+        em = Emulator(visible=siafi_visivel)
+        em.connect(siafi_host)
+        em.wait_for_field()
 
-    em.fill_field(19, 13, sistema, 7)
-    em.fill_field(20, 13, usuario, 7)
-    em.fill_field(21, 13, senha, 7)
+        if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
+            break
+
+        print("Não foi possível estabelecer conexão com o servidor. Tentando novamente...")
+        em.terminate()
+        time.sleep(1)
+
+    em.fill_field(19, 13, sistema, 8)
+    em.fill_field(20, 13, usuario, 8)
+    em.fill_field(21, 13, senha, 8)
     em.send_enter()
 
     max_tentativas = 10
@@ -324,8 +499,15 @@ if __name__ == "__main__":
     em.terminate()
 
     # -----------------------------------------------------------------------
-    # 5) Move o arquivo atualizado para a pasta de conferencia do OneDrive.
+    # 5) Formata e move o arquivo atualizado para a pasta de conferencia.
     # -----------------------------------------------------------------------
+    formatar_planilha(ws)
     wb.save(caminho_local)
     mover(caminho_local, caminho_destino)
     print(f"Planilha atualizada e movida para a pasta de conferencia: {caminho_destino}")
+
+    # -----------------------------------------------------------------------
+    # 6) Organiza os .xlsx soltos em Realizados -> Remanejamentos realizados.
+    # -----------------------------------------------------------------------
+    organizar_realizados(PASTA_REALIZADOS, PASTA_REMANEJAMENTOS_REALIZADOS)
+    print("Pasta Realizados organizada.")
