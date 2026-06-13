@@ -18,7 +18,7 @@ unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 month = datetime.today().strftime("%m")
 
 
-CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-cota/data/remanejamento.xlsx'
+CAMINHO_LOCAL     = '/home/brunohorosa/code/splor-mg/siafi-automacao-cota/data/remanejamento.xlsx'
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
@@ -28,9 +28,9 @@ em.connect('bhmvsb.prodemge.gov.br')
 em.wait_for_field()
 
 # Preenche os dados de login
-em.fill_field(19, 13, sistema, 7)
-em.fill_field(20, 13, usuario, 7)
-em.fill_field(21, 13, senha, 7)
+em.fill_field(19, 13, sistema, 8)
+em.fill_field(20, 13, usuario, 8)
+em.fill_field(21, 13, senha, 8)
 em.send_enter()
 
 # Loop: navega pelas telas até encontrar a mensagem de sucesso
@@ -133,7 +133,7 @@ for idx, row in df.iterrows():
     data_row['fonte']   = str(int(row['Fonte']))
     data_row['procedencia'] = str(int(row['IPU']))
     data_row['acao'] = str(int(row['Ação']))
-    data_row['tipo_global'] = row['GLOBAL'] if pd.notna(row['GLOBAL']) else '0'
+    data_row['tipo_global'] = str(row['GLOBAL']).strip().lower() if pd.notna(row['GLOBAL']) else '0'
     data_row['tipo_amarrado'] = str(int(row['AMARRADO'])) if pd.notna(row['AMARRADO']) else '0'
     data_row['uo_financiadora'] = str(int(row['UO Financiadora'])) if pd.notna(row['UO Financiadora']) else '0'
     if pd.notna(row['AMARRADO']):
