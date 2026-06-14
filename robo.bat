@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal
 
 :: %~dp0 já termina com barra — passa o caminho completo do script diretamente
