@@ -4,7 +4,7 @@
 [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
 
 # ---------------------------------------------------------------------------
-# Funções auxiliares
+# Funcoes auxiliares
 # ---------------------------------------------------------------------------
 
 function Test-UbuntuInstalled {
@@ -21,9 +21,8 @@ function Test-UbuntuInstalled {
 function Test-SetupDone {
     <#
     Retorna $true se o sentinela .setup_done existe E o .env tem ONEDRIVE_BASE.
-    Se o .env estiver incompleto (ex: atualização do login.py adicionou novas
-    variáveis), o setup.sh re-executa apenas para coletar as vars ausentes —
-    as etapas pesadas (apt, clone, venv) são idempotentes e são puladas.
+    Se o .env estiver incompleto, o setup.sh re-executa apenas para coletar
+    as vars ausentes — as etapas pesadas (apt, clone, venv) sao puladas.
     #>
     wsl -d Ubuntu -- bash -c "
         test -f ~/code/splor-mg/siafi-automacao-cota/.setup_done &&
@@ -34,13 +33,13 @@ function Test-SetupDone {
 
 function Request-Elevation {
     <#
-    Se não for admin, relança este script como administrador via UAC e encerra.
+    Se nao for admin, relanca este script como administrador via UAC e encerra.
     #>
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
     if (-not $isAdmin) {
-        Write-Host "Solicitando permissão de administrador para instalar o WSL..."
+        Write-Host "Solicitando permissao de administrador para instalar o WSL..."
         Start-Process PowerShell -Verb RunAs -ArgumentList `
             "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
         exit 0
@@ -49,9 +48,8 @@ function Request-Elevation {
 
 function Test-WslEngineActive {
     <#
-    Retorna $true se a engine WSL2 já está ativa no sistema (independente de
-    haver distros registradas). Usado para saber se um reboot é necessário após
-    wsl --install -d Ubuntu: se a engine já estava ativa, não é.
+    Retorna $true se a engine WSL2 ja esta ativa no sistema.
+    Usado para saber se um reboot e necessario apos wsl --install -d Ubuntu.
     #>
     wsl --status 2>$null | Out-Null
     return $LASTEXITCODE -eq 0
@@ -61,19 +59,18 @@ function ConvertTo-WslPath {
     <#
     Converte um caminho Windows para caminho WSL.
     Trata dois casos:
-      - Caminho normal: C:\Users\foo\bar  →  /mnt/c/Users/foo/bar
-      - UNC do WSL:     \\wsl.localhost\Ubuntu\home\foo  →  /home/foo
-        (ocorre quando o script é executado a partir do filesystem WSL)
+      - Caminho normal: C:\Users\foo\bar  ->  /mnt/c/Users/foo/bar
+      - UNC do WSL:     \\wsl.localhost\Ubuntu\home\foo  ->  /home/foo
+        (ocorre quando o script e executado a partir do filesystem WSL)
     #>
     param([string]$WindowsPath)
 
     if ($WindowsPath -match '^\\\\wsl\.localhost\\[^\\]+\\(.*)$') {
-        # \\wsl.localhost\<distro>\<path> → /<path>
         return '/' + $Matches[1].Replace('\', '/')
     }
 
     if ($WindowsPath -match '^\\\\') {
-        throw "ConvertTo-WslPath: caminho UNC não suportado: $WindowsPath"
+        throw "ConvertTo-WslPath: caminho UNC nao suportado: $WindowsPath"
     }
 
     $drive = $WindowsPath[0].ToString().ToLower()
@@ -86,33 +83,32 @@ function ConvertTo-WslPath {
 # ---------------------------------------------------------------------------
 
 Write-Host ""
-Write-Host "=== Robô SIAFI ===" -ForegroundColor Cyan
+Write-Host "=== Robo SIAFI ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Fase 1: Ubuntu não registrado no WSL
+# Fase 1: Ubuntu nao registrado no WSL
 if (-not (Test-UbuntuInstalled)) {
     $wslJaAtivo = Test-WslEngineActive
 
     if ($wslJaAtivo) {
-        Write-Host "WSL já instalado, mas Ubuntu não encontrado. Registrando Ubuntu..." -ForegroundColor Yellow
+        Write-Host "WSL ja instalado, mas Ubuntu nao encontrado. Registrando Ubuntu..." -ForegroundColor Yellow
     } else {
-        Write-Host "WSL não encontrado. Instalando WSL e Ubuntu..." -ForegroundColor Yellow
+        Write-Host "WSL nao encontrado. Instalando WSL e Ubuntu..." -ForegroundColor Yellow
     }
 
-    Request-Elevation   # re-lança como admin se necessário (não retorna se não for admin)
+    Request-Elevation
 
     Write-Host "Executando: wsl --install -d Ubuntu" -ForegroundColor Yellow
     wsl --install -d Ubuntu
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
-        Write-Host "ERRO: wsl --install falhou (código $LASTEXITCODE)." -ForegroundColor Red
-        Write-Host "Verifique se a virtualização está habilitada na BIOS e tente novamente." -ForegroundColor Red
+        Write-Host "ERRO: wsl --install falhou (codigo $LASTEXITCODE)." -ForegroundColor Red
+        Write-Host "Verifique se a virtualizacao esta habilitada na BIOS e tente novamente." -ForegroundColor Red
         exit 1
     }
 
     if (-not $wslJaAtivo) {
-        # Engine WSL foi instalada agora — reboot obrigatório para ativar virtualização
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green
         Write-Host "  WSL e Ubuntu instalados com sucesso!"                       -ForegroundColor Green
@@ -121,16 +117,14 @@ if (-not (Test-UbuntuInstalled)) {
         exit 0
     }
 
-    # WSL já estava ativo — Ubuntu acabou de ser registrado, sem reboot necessário.
-    # O Ubuntu abrirá para configuração de usuário/senha na Fase 2.
     Write-Host ""
-    Write-Host "Ubuntu registrado. Prosseguindo com a configuração..." -ForegroundColor Green
+    Write-Host "Ubuntu registrado. Prosseguindo com a configuracao..." -ForegroundColor Green
     Write-Host ""
 }
 
-# Fase 2: Ubuntu instalado mas projeto não configurado
+# Fase 2: Ubuntu instalado mas projeto nao configurado
 if (-not (Test-SetupDone)) {
-    Write-Host "Primeira execução: configurando o ambiente Ubuntu..." -ForegroundColor Yellow
+    Write-Host "Primeira execucao: configurando o ambiente Ubuntu..." -ForegroundColor Yellow
     Write-Host "(Isso pode levar alguns minutos)" -ForegroundColor Gray
     Write-Host ""
 
@@ -141,22 +135,22 @@ if (-not (Test-SetupDone)) {
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
-        Write-Host "ERRO: setup.sh falhou (código $LASTEXITCODE). Verifique as mensagens acima." -ForegroundColor Red
+        Write-Host "ERRO: setup.sh falhou (codigo $LASTEXITCODE). Verifique as mensagens acima." -ForegroundColor Red
         exit 1
     }
 
     Write-Host ""
-    Write-Host "Configuração concluída! Iniciando o robô..." -ForegroundColor Green
+    Write-Host "Configuracao concluida! Iniciando o robo..." -ForegroundColor Green
     Write-Host ""
 }
 
-# Fase 3: Tudo pronto — executar o robô
-Write-Host "Iniciando o robô SIAFI..." -ForegroundColor Cyan
-wsl -d Ubuntu -- bash -c "cd ~/code/splor-mg/siafi-automacao-cota && source venv/bin/activate && python siafi_automacao/login.py"
+# Fase 3: Tudo pronto — executar o robo
+Write-Host "Iniciando o robo SIAFI..." -ForegroundColor Cyan
+wsl -d Ubuntu -- bash -c "cd ~/code/splor-mg/siafi-automacao-cota && source venv/bin/activate && PYTHONIOENCODING=utf-8 python siafi_automacao/login.py"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "O robô encerrou com erro (código $LASTEXITCODE)." -ForegroundColor Red
+    Write-Host "O robo encerrou com erro (codigo $LASTEXITCODE)." -ForegroundColor Red
 }
 
 exit $LASTEXITCODE
