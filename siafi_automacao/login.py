@@ -1,8 +1,8 @@
 import os
+import sys
 import glob
 import shutil
 import subprocess
-import sys
 import time
 from datetime import date, datetime
 
@@ -25,11 +25,13 @@ senha             = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 
 _onedrive_base = os.getenv('ONEDRIVE_BASE')
+siafi_host     = os.getenv('SIAFI_HOST', 'bhmvsb.prodemge.gov.br')
+siafi_visivel  = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
 
 month = datetime.today().strftime("%m")
 
 # Pasta de ORIGEM (OneDrive sincronizado) de onde o arquivo a processar e
-# MOVIDO para a pasta local. O caminho do Windows  C:\Users\...  e acessado
+# MOVIDO para a pasta local. O caminho do Windows  C:/Users/...  e acessado
 # a partir do WSL via /mnt/c/...
 PASTA_ORIGEM                    = os.path.join(_onedrive_base, 'Robo (IPU 2)', 'Python')
 PASTA_DESTINO                   = os.path.join(_onedrive_base, 'Conferencia arquivo robo')
@@ -236,7 +238,7 @@ def montar_data_row(get, month):
     dr['acao']        = _txt_int(get('Ação'))
 
     g = get('GLOBAL')
-    dr['tipo_global'] = g.strip() if (isinstance(g, str) and g.strip() != '') else '0'
+    dr['tipo_global'] = g.strip().lower() if (isinstance(g, str) and g.strip() != '') else '0'
 
     am = get('AMARRADO')
     if not _vazio(am):
@@ -371,8 +373,8 @@ if __name__ == "__main__":
     # 3) Login no SIAFI
     # -----------------------------------------------------------------------
     while True:
-        em = Emulator(visible=True)  # use visible=False para rodar sem janela
-        em.connect('bhmvsb.prodemge.gov.br')
+        em = Emulator(visible=siafi_visivel)
+        em.connect(siafi_host)
         em.wait_for_field()
 
         if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
