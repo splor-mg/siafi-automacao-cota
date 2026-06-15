@@ -196,3 +196,8 @@ pyrightconfig.json
 
 # Sentinela do launcher WSL
 .setup_done
+
+### Projeto ###
+data/
+*.xlsx
+*.xls

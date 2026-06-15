@@ -54,6 +54,7 @@ def anular(em, data_row):
             or retorno == "0139- PROJ/ATIV OU FONTE/PROC./IAG INEXISTENTE PARA UO"
             or retorno == "0139- VALORES A ANULAR MAIOR QUE SALDO DISPONIVEL."
             or retorno == "0101- GRUPO DESPESA INEXISTENTE(S)."
+            or retorno == "0139- PROGRAMA DE TRABALHO NAO ENCONTRADO PARA GM/FP."
         ):
             ##interrompe o fluxo e segue para a proxima etapa, para evitar erros de preenchimento
             break
