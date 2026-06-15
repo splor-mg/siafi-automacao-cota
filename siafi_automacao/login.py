@@ -460,6 +460,13 @@ if __name__ == "__main__":
         get = lambda nome: ws.cell(row=r, column=col[nome]).value
         data_row = montar_data_row(get, month)
 
+        # Remanejamentos so sao permitidos para IAG 0.
+        if data_row['iag'] == '1':
+            print(f"Linha {r}: IAG 1, pulando.")
+            ws.cell(row=r, column=col['Progresso']).value = 'IAG 1 - Não Realizado'
+            wb.save(caminho_local)
+            continue
+
         # Linha sem GLOBAL e sem AMARRADO nao e processavel no SIAFI:
         # registra o motivo e segue para a proxima.
         if data_row['tipo_global'] != 'x' and data_row['tipo_amarrado'] == '0':
