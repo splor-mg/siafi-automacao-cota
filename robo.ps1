@@ -144,7 +144,14 @@ if (-not (Test-SetupDone)) {
     Write-Host ""
 }
 
-# Fase 3: Tudo pronto — executar o robo
+# Fase 3: Tudo pronto — atualizar o repositorio e executar o robo
+Write-Host "Atualizando o robo (git pull na main)..." -ForegroundColor Cyan
+wsl -d Ubuntu -- bash -c "cd ~/code/splor-mg/siafi-automacao-cota && git checkout main && git pull origin main"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[aviso] Nao foi possivel atualizar via git pull. Rodando a versao local atual." -ForegroundColor Yellow
+}
+Write-Host ""
+
 Write-Host "Iniciando o robo SIAFI..." -ForegroundColor Cyan
 wsl -d Ubuntu -- bash -c "cd ~/code/splor-mg/siafi-automacao-cota && source venv/bin/activate && PYTHONIOENCODING=utf-8 python siafi_automacao/login.py"
 

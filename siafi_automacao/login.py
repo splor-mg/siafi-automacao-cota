@@ -4,7 +4,7 @@ import glob
 import shutil
 import subprocess
 import time
-from datetime import date, datetime
+from datetime import datetime
 
 from dotenv import load_dotenv
 from py3270 import Emulator
@@ -270,65 +270,11 @@ def montar_data_row(get, month):
 if __name__ == "__main__":
 
     # -----------------------------------------------------------------------
-    # 0) Executa consolida.py, aguarda o arquivo ficar disponível e pede
-    #    confirmação antes de iniciar o fluxo no SIAFI.
+    # 0) Executa consolida.py e segue direto para o fluxo no SIAFI.
     # -----------------------------------------------------------------------
     script_consolida = os.path.join(os.path.dirname(__file__), 'consolida.py')
     print("Executando consolida.py...")
     subprocess.run([sys.executable, script_consolida], check=True)
-
-    hoje = date.today()
-    nome_conferencia = (
-        f'Conferencia arquivo robo {hoje.day:02d}.{hoje.month:02d}.xlsx'
-    )
-    caminho_conferencia = os.path.join(PASTA_ORIGEM, nome_conferencia)
-
-    print("Aguardando o arquivo de conferência ficar disponível...", end='', flush=True)
-    disponivel = False
-    for _ in range(30):
-        if os.path.exists(caminho_conferencia):
-            try:
-                open(caminho_conferencia, 'rb').close()
-                disponivel = True
-                break
-            except OSError:
-                pass
-        print('.', end='', flush=True)
-        time.sleep(2)
-    print()
-
-    if disponivel:
-        caminho_windows = caminho_conferencia.replace('/mnt/c/', 'C:\\').replace('/', '\\')
-        subprocess.Popen(
-            ['cmd.exe', '/c', 'start', '', caminho_windows],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        print(f"Arquivo aberto: {caminho_windows}")
-    else:
-        print("[aviso] Arquivo de conferência não encontrado após 60s.")
-
-    resposta = ''
-    while resposta not in ('s', 'n'):
-        resposta = input("Deseja continuar com o fluxo no SIAFI? (s/n): ").strip().lower()
-
-    if resposta == 'n':
-        print("Fluxo cancelado pelo usuário.")
-        raise SystemExit(0)
-
-    if disponivel:
-        nome_conferencia_win = os.path.basename(caminho_conferencia)
-        ps_cmd = (
-            '$xl = $null; '
-            'try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application") } catch {}; '
-            f'if ($xl) {{ $xl.Workbooks | Where-Object {{ $_.Name -eq "{nome_conferencia_win}" }} '
-            '| ForEach-Object { $_.Close($false) }; '
-            'if ($xl.Workbooks.Count -eq 0) { $xl.Quit() } }'
-        )
-        subprocess.run(
-            ['powershell.exe', '-Command', ps_cmd],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        print(f"Arquivo de conferência fechado.")
 
     # -----------------------------------------------------------------------
     # 1) Move o arquivo da pasta de origem para a pasta local e abre a copia
