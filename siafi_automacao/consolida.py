@@ -3,6 +3,12 @@ Consolidação do "Conferencia arquivo robo".
 
 Fluxo:
 
+0. VALIDA todos os arquivos das pastas de remanejamento ANTES de qualquer
+   consolidação/movimentação. Se qualquer linha violar as regras de negócio,
+   imprime TODOS os erros (arquivo, linha, coluna, valor) e aborta com código
+   de saída != 0 — o que faz o subprocess.run(..., check=True) do orquestrador
+   interromper todo o fluxo antes de tocar no SIAFI.
+
 1. Procura o arquivo "Conferencia arquivo robo <dd.mm>" na pasta CONFERENCIA.
 
 2. Lê a data do nome do arquivo:
@@ -63,7 +69,36 @@ COLUNAS_CODIGO  = [
     'Execução', 'UO_COD', 'Grupo', 'IAG', 'Fonte', 'IPU', 'Ação',
     'AMARRADO', 'UO Financiadora',
 ]
-# ========================================================
+
+# ------------------- REGRAS DE VALIDAÇÃO -------------------
+# Colunas obrigatórias em cada planilha de remanejamento. Se faltar alguma,
+# o arquivo inteiro é reprovado (não dá para validar/consolidar sem elas).
+COLUNAS_OBRIGATORIAS = [
+    'UO_COD', 'Grupo', 'IAG', 'IPU', 'Ação',
+    'GLOBAL', 'AMARRADO', 'Anular', 'Aprovar', 'UO Financiadora',
+]
+
+# Uma linha é considerada "linha de dados" (e portanto validada) se QUALQUER
+# uma destas colunas estiver preenchida. Linhas totalmente em branco são
+# ignoradas (espaçadores, etc.).
+COLUNAS_GATILHO = [
+    'UO_COD', 'Grupo', 'IAG', 'Fonte', 'IPU', 'Ação',
+    'GLOBAL', 'AMARRADO', 'Anular', 'Aprovar', 'UO Financiadora',
+]
+
+DIGITOS_UO       = 4        # UO_COD: exatamente 4 dígitos
+DIGITOS_ACAO     = 4        # Ação: exatamente 4 dígitos
+DIGITOS_UO_FIN   = 4        # UO Financiadora (quando exigida): exatamente 4 dígitos
+GRUPO_MIN, GRUPO_MAX = 1, 6
+IPU_MIN, IPU_MAX     = 0, 9
+IAG_VALIDOS          = {0, 1}
+
+# AMARRADO: aceita de 1 até 4 dígitos, pois o fluxo faz .zfill(4) e a aba DADOS
+# contém elemento-item válidos de 3 dígitos (ex.: 308 -> 0308). Se a regra de
+# negócio for "sempre 4 dígitos", troque AMARRADO_MIN_DIGITOS para 4.
+AMARRADO_MIN_DIGITOS = 1
+AMARRADO_MAX_DIGITOS = 4
+# ==========================================================
 
 
 def _sem_acento(texto: str) -> str:
@@ -115,6 +150,249 @@ def encontrar_conferencia(pasta: str):
     return caminho, dia, mes
 
 
+# ===========================================================================
+# VALIDAÇÃO DAS PLANILHAS DE REMANEJAMENTO
+# ===========================================================================
+def _vazio_cel(v) -> bool:
+    """True para célula vazia: None, NaN (pandas) ou string em branco."""
+    try:
+        if pd.isna(v):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return isinstance(v, str) and v.strip() == ''
+
+
+def _inteiro(v):
+    """Tenta converter para int 'limpo'. Retorna (ok, valor).
+    Aceita 1401, 1401.0, '1401', ' 1401 '. Rejeita 1401.5, 'abc', vazio."""
+    if _vazio_cel(v):
+        return False, None
+    try:
+        f = float(str(v).strip())
+    except (TypeError, ValueError):
+        return False, None
+    if f != int(f):
+        return False, None
+    return True, int(f)
+
+
+def _numero(v):
+    """Tenta converter para float (valor monetário). Retorna (ok, valor)."""
+    if _vazio_cel(v):
+        return False, None
+    try:
+        return True, float(v)
+    except (TypeError, ValueError):
+        try:
+            return True, float(str(v).strip())
+        except (TypeError, ValueError):
+            return False, None
+
+
+def _num_digitos(n: int) -> int:
+    return len(str(abs(int(n))))
+
+
+def _validar_linha(row, arquivo: str, linha_excel: int, erros: list):
+    """Aplica todas as regras de negócio a uma linha e acrescenta os problemas
+    encontrados à lista 'erros' como tuplas (arquivo, linha, coluna, valor, msg)."""
+
+    def add(coluna, valor, msg):
+        erros.append((arquivo, linha_excel, coluna, valor, msg))
+
+    # --- UO_COD: obrigatório, inteiro, exatamente DIGITOS_UO dígitos ---
+    uo = row.get('UO_COD')
+    ok_uo, uo_int = _inteiro(uo)
+    if _vazio_cel(uo):
+        add('UO_COD', uo, 'UO_COD vazio (obrigatório)')
+    elif not ok_uo:
+        add('UO_COD', uo, 'UO_COD deve ser um número inteiro')
+    elif _num_digitos(uo_int) != DIGITOS_UO:
+        add('UO_COD', uo, f'UO_COD deve ter {DIGITOS_UO} dígitos')
+
+    # --- Grupo: obrigatório, inteiro de GRUPO_MIN a GRUPO_MAX ---
+    grupo = row.get('Grupo')
+    ok_grupo, grupo_int = _inteiro(grupo)
+    if _vazio_cel(grupo):
+        add('Grupo', grupo, 'Grupo vazio (obrigatório)')
+    elif not ok_grupo:
+        add('Grupo', grupo, 'Grupo deve ser um número inteiro')
+    elif not (GRUPO_MIN <= grupo_int <= GRUPO_MAX):
+        add('Grupo', grupo, f'Grupo deve estar entre {GRUPO_MIN} e {GRUPO_MAX}')
+
+    # --- IAG: obrigatório, 0 ou 1 ---
+    iag = row.get('IAG')
+    ok_iag, iag_int = _inteiro(iag)
+    if _vazio_cel(iag):
+        add('IAG', iag, 'IAG vazio (obrigatório)')
+    elif not ok_iag or iag_int not in IAG_VALIDOS:
+        add('IAG', iag, 'IAG deve ser 0 ou 1')
+
+    # --- IPU: obrigatório, inteiro de IPU_MIN a IPU_MAX ---
+    ipu = row.get('IPU')
+    ok_ipu, ipu_int = _inteiro(ipu)
+    if _vazio_cel(ipu):
+        add('IPU', ipu, 'IPU vazio (obrigatório)')
+    elif not ok_ipu or not (IPU_MIN <= ipu_int <= IPU_MAX):
+        add('IPU', ipu, f'IPU deve ser um número de {IPU_MIN} a {IPU_MAX}')
+
+    # --- Ação: obrigatório, inteiro, exatamente DIGITOS_ACAO dígitos ---
+    acao = row.get('Ação')
+    ok_acao, acao_int = _inteiro(acao)
+    if _vazio_cel(acao):
+        add('Ação', acao, 'Ação vazia (obrigatório)')
+    elif not ok_acao:
+        add('Ação', acao, 'Ação deve ser um número inteiro')
+    elif _num_digitos(acao_int) != DIGITOS_ACAO:
+        add('Ação', acao, f'Ação deve ter {DIGITOS_ACAO} dígitos')
+
+    # --- GLOBAL x AMARRADO ---
+    glob = row.get('GLOBAL')
+    amarr = row.get('AMARRADO')
+    glob_preench = not _vazio_cel(glob)
+    amarr_preench = not _vazio_cel(amarr)
+
+    # GLOBAL: se preenchido, só aceita 'x'/'X'
+    if glob_preench and str(glob).strip().lower() != 'x':
+        add('GLOBAL', glob, "GLOBAL só pode conter 'x' (ou 'X')")
+
+    # AMARRADO: se preenchido, inteiro de 1 a AMARRADO_MAX_DIGITOS dígitos
+    ok_amarr, amarr_int = (False, None)
+    if amarr_preench:
+        ok_amarr, amarr_int = _inteiro(amarr)
+        if not ok_amarr:
+            add('AMARRADO', amarr, 'AMARRADO deve ser um número inteiro')
+        elif not (AMARRADO_MIN_DIGITOS <= _num_digitos(amarr_int) <= AMARRADO_MAX_DIGITOS):
+            add('AMARRADO', amarr,
+                f'AMARRADO deve ter até {AMARRADO_MAX_DIGITOS} dígitos')
+
+    # Exclusão mútua: exatamente um dos dois preenchido
+    if glob_preench and amarr_preench:
+        add('GLOBAL/AMARRADO', f'GLOBAL={glob} | AMARRADO={amarr}',
+            'GLOBAL e AMARRADO não podem estar preenchidos ao mesmo tempo')
+    elif not glob_preench and not amarr_preench:
+        add('GLOBAL/AMARRADO', '',
+            'A linha precisa ter GLOBAL ou AMARRADO preenchido')
+
+    # Grupo 1 ou IPU 9 -> AMARRADO obrigatório (GLOBAL não é permitido)
+    exige_amarrado = (ok_grupo and grupo_int == 1) or (ok_ipu and ipu_int == 9)
+    if exige_amarrado and not amarr_preench:
+        motivo = 'Grupo 1' if (ok_grupo and grupo_int == 1) else 'IPU 9'
+        add('AMARRADO', amarr,
+            f'{motivo} exige AMARRADO preenchido (GLOBAL não é permitido)')
+
+    # --- Anular x Aprovar ---
+    anular = row.get('Anular')
+    aprovar = row.get('Aprovar')
+    anular_preench = not _vazio_cel(anular)
+    aprovar_preench = not _vazio_cel(aprovar)
+
+    if anular_preench:
+        ok_an, val_an = _numero(anular)
+        if not ok_an:
+            add('Anular', anular, 'Anular deve ser um valor numérico')
+        elif val_an <= 0:
+            add('Anular', anular, 'Anular deve ser um valor maior que zero')
+
+    if aprovar_preench:
+        ok_ap, val_ap = _numero(aprovar)
+        if not ok_ap:
+            add('Aprovar', aprovar, 'Aprovar deve ser um valor numérico')
+        elif val_ap <= 0:
+            add('Aprovar', aprovar, 'Aprovar deve ser um valor maior que zero')
+
+    # Exclusão mútua: exatamente um dos dois preenchido
+    if anular_preench and aprovar_preench:
+        add('Anular/Aprovar', f'Anular={anular} | Aprovar={aprovar}',
+            'Anular e Aprovar não podem estar preenchidos ao mesmo tempo')
+    elif not anular_preench and not aprovar_preench:
+        add('Anular/Aprovar', '',
+            'A linha precisa ter Anular ou Aprovar preenchido')
+
+    # --- UO Financiadora: obrigatória com 4 dígitos quando IPU == 2 ---
+    uofin = row.get('UO Financiadora')
+    if ok_ipu and ipu_int == 2:
+        if _vazio_cel(uofin):
+            add('UO Financiadora', uofin,
+                'UO Financiadora é obrigatória quando IPU = 2')
+        else:
+            ok_fin, fin_int = _inteiro(uofin)
+            if not ok_fin:
+                add('UO Financiadora', uofin,
+                    'UO Financiadora deve ser um número inteiro')
+            elif _num_digitos(fin_int) != DIGITOS_UO_FIN:
+                add('UO Financiadora', uofin,
+                    f'UO Financiadora deve ter {DIGITOS_UO_FIN} dígitos')
+
+
+def validar_arquivo(caminho: str, erros: list):
+    """Valida uma planilha de remanejamento inteira, acrescentando os problemas
+    encontrados à lista 'erros'. Retorna True se o arquivo foi lido; False se
+    houve falha ao abrir (o erro correspondente já é acrescentado à lista)."""
+    nome = os.path.basename(caminho)
+    try:
+        df = pd.read_excel(caminho, sheet_name=0)
+    except Exception as e:
+        erros.append((nome, '-', '-', '', f'Falha ao abrir o arquivo: {e}'))
+        return False
+
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Colunas obrigatórias presentes?
+    faltando = [c for c in COLUNAS_OBRIGATORIAS if c not in df.columns]
+    if faltando:
+        erros.append((nome, '-', ', '.join(faltando), '',
+                      'Colunas obrigatórias ausentes na planilha'))
+        return True  # sem as colunas não dá para validar linha a linha
+
+    df = df.reset_index(drop=True)
+    for i, row in df.iterrows():
+        # É linha de dados? (qualquer coluna-gatilho preenchida)
+        tem_conteudo = any(
+            (c in df.columns) and not _vazio_cel(row.get(c))
+            for c in COLUNAS_GATILHO
+        )
+        if not tem_conteudo:
+            continue
+        linha_excel = i + 2  # +1 do cabeçalho, +1 porque Excel começa em 1
+        _validar_linha(row, nome, linha_excel, erros)
+
+    return True
+
+
+def validar_todos(arquivos: list) -> list:
+    """Valida todos os arquivos e devolve a lista consolidada de erros."""
+    erros = []
+    for caminho in arquivos:
+        validar_arquivo(caminho, erros)
+    return erros
+
+
+def imprimir_relatorio_erros(erros: list):
+    """Imprime os erros agrupados por arquivo, ordenados por linha."""
+    print('\n' + '=' * 78)
+    print(f'VALIDAÇÃO REPROVADA — {len(erros)} problema(s) encontrado(s).')
+    print('Corrija as planilhas abaixo e rode novamente. Nada foi consolidado.')
+    print('=' * 78)
+
+    por_arquivo = {}
+    for arq, linha, coluna, valor, msg in erros:
+        por_arquivo.setdefault(arq, []).append((linha, coluna, valor, msg))
+
+    for arq in sorted(por_arquivo):
+        print(f'\n>> {arq}')
+        def _chave(item):
+            linha = item[0]
+            return (0, linha) if isinstance(linha, int) else (1, 0)
+        for linha, coluna, valor, msg in sorted(por_arquivo[arq], key=_chave):
+            local = f'linha {linha}' if isinstance(linha, int) else 'arquivo'
+            valor_txt = '' if _vazio_cel(valor) else f" | valor: '{valor}'"
+            print(f'   [{local}] coluna: {coluna}{valor_txt}\n       -> {msg}')
+    print('\n' + '=' * 78)
+
+
+# ===========================================================================
 def ler_arquivo_origem(caminho: str) -> pd.DataFrame:
     """Lê a 1ª aba, descarta linhas-lixo e alinha as colunas ao layout do conferência."""
     df = pd.read_excel(caminho, sheet_name=0)
@@ -173,6 +451,16 @@ def main():
         print('Nenhum arquivo nas pastas de remanejamento. Nada a consolidar.')
         return
 
+    # 1.5) VALIDA todas as planilhas antes de consolidar/mover qualquer coisa.
+    #      Se houver qualquer erro, imprime tudo e ABORTA com código != 0 para
+    #      interromper o orquestrador (subprocess.run(..., check=True)).
+    print(f'Validando {len(arquivos_origem)} arquivo(s) de remanejamento...')
+    erros = validar_todos(arquivos_origem)
+    if erros:
+        imprimir_relatorio_erros(erros)
+        raise SystemExit(1)
+    print('Validação OK: todas as planilhas passaram nas regras.')
+
     # 2) Lê os arquivos de origem
     blocos = []
     for caminho in arquivos_origem:
@@ -186,7 +474,7 @@ def main():
         except Exception as e:
             print(f'[ERRO] Falha ao ler {os.path.basename(caminho)}: {e}')
             print('Abortando para não consolidar dados parciais.')
-            return
+            raise SystemExit(1)
 
     if not blocos:
         print('Nenhuma linha válida encontrada nos arquivos de origem.')
