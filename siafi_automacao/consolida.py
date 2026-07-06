@@ -96,7 +96,7 @@ IAG_VALIDOS          = {0, 1}
 # AMARRADO: aceita de 1 até 4 dígitos, pois o fluxo faz .zfill(4) e a aba DADOS
 # contém elemento-item válidos de 3 dígitos (ex.: 308 -> 0308). Se a regra de
 # negócio for "sempre 4 dígitos", troque AMARRADO_MIN_DIGITOS para 4.
-AMARRADO_MIN_DIGITOS = 1
+AMARRADO_MIN_DIGITOS = 4
 AMARRADO_MAX_DIGITOS = 4
 # ==========================================================
 
