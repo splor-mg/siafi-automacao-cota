@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Instalar Python
+      - name: Instalar Pythoneu workflow pode continuar exatamente assi
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -27,6 +27,7 @@ jobs:
 
       - name: Install system dependencies for py3270
         run: |
+          whoami
           sudo apt-get update
           sudo apt-get install -y s3270 openvpn curl netcat-openbsd
 
