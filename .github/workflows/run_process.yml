@@ -1,4 +1,4 @@
-name: Run process through VPN
+name: Run process
 
 on:
   workflow_dispatch:
@@ -7,9 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  run-process-vpn:
-    name: Run process through VPN
-    runs-on: teste
+  run_process:
+    name: Cota
+    runs-on: self-hosted
+    
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
