@@ -69,6 +69,8 @@ def anular(em, data_row):
             em.wait_for_field()
             time.sleep(1)
             retorno = em.string_get(1, 1, 80).strip()
+            if retorno in ("0017-TECLE PF5 PARA CONFIRMAR OU PF2 PARA ANULAR."):
+                retorno = em.string_get(4, 19, 46).strip()
             break
 
     ## erro de saldo contabil aparece aqui.... precisa ser estudado

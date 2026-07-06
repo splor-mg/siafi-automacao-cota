@@ -131,6 +131,8 @@ def traduzir_progresso(retorno):
     mapa = {
         "0139- VALOR A APROVAR MAIOR QUE SALDO DISPONIVEL NO PROJ/ATIV.":
             'Valor a aprovar maior que o saldo disponível',
+        "Inconsistencia no Registro da Contabilizacao":
+            'Erro de Saldo Contábil',
         "0139- PROGRAMA DE TRABALHO NAO ENCONTRADO PARA GM/FP.":
             'Programa de trabalho não encontrado para GM/FP',
         "0139- VALORES A ANULAR MAIOR QUE SALDO DISPONIVEL.":
