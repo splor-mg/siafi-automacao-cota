@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 from dotenv import load_dotenv
 from py3270 import Emulator
 from datetime import datetime
@@ -15,6 +16,21 @@ usuario = os.getenv('USUARIO')
 senha = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 
+def require_env(name, value, max_length):
+    if value is None or not value.strip():
+        raise RuntimeError(f"Required environment variable '{name}' is not set.")
+    value = value.strip()
+    if len(value) > max_length:
+        raise RuntimeError(
+            f"Environment variable '{name}' must be at most {max_length} characters; got {len(value)}."
+        )
+    return value
+
+sistema = require_env('SISTEMA', sistema, 4)
+usuario = require_env('USUARIO', usuario, 7)
+senha = require_env('SENHA', senha, 7)
+unidade_executora = require_env('UNIDADE_EXECUTORA', unidade_executora, 7)
+
 month = datetime.today().strftime("%m")
 
 
@@ -24,7 +40,7 @@ CAMINHO_LOCAL = os.path.join(os.getenv('PASTA_LOCAL'), 'remanejamento.xlsx')
 SHEET_NAME = 'CombinedSheet'
 
 while True:
-    em = Emulator(visible=True)  # use visible=False para rodar sem janela
+    em = Emulator(visible=False, args=['-script']) ## use modo headless com script para o s3270
     em.connect('bhmvsb.prodemge.gov.br')
     em.wait_for_field()
 
@@ -70,6 +86,7 @@ while tentativas < max_tentativas:
 if tentativas == max_tentativas:
     print("Não foi possível fazer login após várias tentativas.")
     em.terminate()
+    sys.exit(1)
 
 em.fill_field(1, 2, sistema, 4)
 em.send_enter()
@@ -104,6 +121,7 @@ while tentativas < max_tentativas:
 if tentativas == max_tentativas:
     print("Não foi possível fazer login após várias tentativas.")
     em.terminate()
+    sys.exit(1)
 
 #Entrar com a Unidade Executora
 em.fill_field(22, 30, unidade_executora, 7)
@@ -153,7 +171,7 @@ for idx, row in df.iterrows():
         data_row['item'] = '0'
     data_row['valor_anulacao'] = int(round(float(row['Anular']), 2) * 100) if pd.notna(row['Anular']) else 0
     data_row['valor_aprovacao'] = int(round(float(row['Aprovar']), 2) * 100) if pd.notna(row['Aprovar']) else 0
-     
+
     ##Definição do valor a ser preenchido, dependendo se é anulação ou aprovação
     if pd.notna(row['Anular']):
         data_row['valor'] = int(round(float(row['Anular']), 2) * 100)
@@ -164,7 +182,7 @@ for idx, row in df.iterrows():
         print(f"realizando procedimento de anulação")
     elif data_row['valor_aprovacao'] != 0:
         print(f"realizando procedimento de aprovação")
-            
+
     if data_row['tipo_global'] == 'x':
         print(f"Processando UO: {data_row['uo']}, Grupo: {data_row['grupo']}, Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}")
     elif data_row['tipo_amarrado'] != '0':
