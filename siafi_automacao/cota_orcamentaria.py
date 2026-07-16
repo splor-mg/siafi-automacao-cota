@@ -34,7 +34,7 @@ unidade_executora = require_env('UNIDADE_EXECUTORA', unidade_executora, 7)
 month = datetime.today().strftime("%m")
 
 
-CAMINHO_LOCAL = os.path.join(os.getenv('PASTA_LOCAL'), 'remanejamento.xlsx')
+CAMINHO_LOCAL = os.path.join('data', 'remanejamento.xlsx')
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
@@ -51,11 +51,21 @@ while True:
     em.terminate()
     time.sleep(1)
 
-# Preenche os dados de login
-em.fill_field(19, 13, sistema, 8)
-em.fill_field(20, 13, usuario, 8)
-em.fill_field(21, 13, senha, 8)
-em.send_enter()
+max_tentativas = 5
+tentativas = 0
+while tentativas < max_tentativas and not em.string_found(19, 2, 'Aplicacao'):
+    time.sleep(1)
+    tentativas += 1
+
+if em.string_found(19, 2, 'Aplicacao'):
+    em.fill_field(19, 13, sistema, 8)
+    em.fill_field(20, 13, usuario, 8)
+    em.fill_field(21, 13, senha, 8)
+    em.send_enter()
+else:
+    print("Erro de sincronizacao com o SIAFI. Tente novamente.")
+    em.terminate()
+    raise SystemExit(1)
 
 # Loop: navega pelas telas até encontrar a mensagem de sucesso
 max_tentativas = 10
