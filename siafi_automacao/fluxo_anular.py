@@ -54,6 +54,7 @@ def anular(em, data_row):
             or retorno == "0139- PROJ/ATIV OU FONTE/PROC./IAG INEXISTENTE PARA UO"
             or retorno == "0139- VALORES A ANULAR MAIOR QUE SALDO DISPONIVEL."
             or retorno == "0101- GRUPO DESPESA INEXISTENTE(S)."
+            or retorno == "0139- PROGRAMA DE TRABALHO NAO ENCONTRADO PARA GM/FP."
         ):
             ##interrompe o fluxo e segue para a proxima etapa, para evitar erros de preenchimento
             break
@@ -68,6 +69,8 @@ def anular(em, data_row):
             em.wait_for_field()
             time.sleep(1)
             retorno = em.string_get(1, 1, 80).strip()
+            if retorno in ("0017-TECLE PF5 PARA CONFIRMAR OU PF2 PARA ANULAR."):
+                retorno = em.string_get(4, 19, 46).strip()
             break
 
     ## erro de saldo contabil aparece aqui.... precisa ser estudado

@@ -34,19 +34,27 @@ unidade_executora = require_env('UNIDADE_EXECUTORA', unidade_executora, 7)
 month = datetime.today().strftime("%m")
 
 
-CAMINHO_LOCAL     = 'data/remanejamento.xlsx'
+CAMINHO_LOCAL = os.path.join(os.getenv('PASTA_LOCAL'), 'remanejamento.xlsx')
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'CombinedSheet'
 
-em = Emulator(visible=False, args=['-script']) ## use modo headless com script para o s3270
-em.connect('bhmvsb.prodemge.gov.br')
-em.wait_for_field()
+while True:
+    em = Emulator(visible=False, args=['-script']) ## use modo headless com script para o s3270
+    em.connect('bhmvsb.prodemge.gov.br')
+    em.wait_for_field()
+
+    if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
+        break
+
+    print("Não foi possível estabelecer conexão com o servidor. Tentando novamente...")
+    em.terminate()
+    time.sleep(1)
 
 # Preenche os dados de login
-em.fill_field(19, 13, sistema, 7)
-em.fill_field(20, 13, usuario, 7)
-em.fill_field(21, 13, senha, 7)
+em.fill_field(19, 13, sistema, 8)
+em.fill_field(20, 13, usuario, 8)
+em.fill_field(21, 13, senha, 8)
 em.send_enter()
 
 # Loop: navega pelas telas até encontrar a mensagem de sucesso
@@ -151,7 +159,7 @@ for idx, row in df.iterrows():
     data_row['fonte']   = str(int(row['Fonte']))
     data_row['procedencia'] = str(int(row['IPU']))
     data_row['acao'] = str(int(row['Ação']))
-    data_row['tipo_global'] = row['GLOBAL'] if pd.notna(row['GLOBAL']) else '0'
+    data_row['tipo_global'] = str(row['GLOBAL']).strip().lower() if pd.notna(row['GLOBAL']) else '0'
     data_row['tipo_amarrado'] = str(int(row['AMARRADO'])) if pd.notna(row['AMARRADO']) else '0'
     data_row['uo_financiadora'] = str(int(row['UO Financiadora'])) if pd.notna(row['UO Financiadora']) else '0'
     if pd.notna(row['AMARRADO']):

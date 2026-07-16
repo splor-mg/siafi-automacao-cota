@@ -195,3 +195,11 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+
+# Sentinela do launcher WSL
+.setup_done
+
+### Projeto ###
+data/
+*.xlsx
+*.xls
