@@ -2,6 +2,11 @@ name: Run process
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'data/**'
 
 permissions:
   contents: read
