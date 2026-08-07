@@ -29,11 +29,21 @@ Fluxo:
 OBS.: como o arquivo SAI da pasta CONFERENCIA, para uma 2ª rodada no MESMO dia
 apensar corretamente (Execução +1), o arquivo precisa ser devolvido à pasta
 CONFERENCIA por outro processo antes da próxima execução.
+
+OBS. (lock do OneDrive): todas as pastas acima ficam dentro de uma árvore
+sincronizada pelo cliente OneDrive do Windows (acessada via /mnt/c/... no
+WSL). Um arquivo recém-escrito pode ficar temporariamente com um handle
+aberto pelo processo de sincronização, fazendo os.remove()/shutil.move()
+falharem com PermissionError mesmo quando não há nada de errado com os
+dados. Por isso as operações de remoção/movimentação abaixo tentam de novo
+com backoff antes de desistir — e, se mesmo assim falharem, abortam com
+erro visível em vez de seguir silenciosamente (ver mover_com_retry).
 """
 
 import os
 import re
 import shutil
+import time
 import unicodedata
 from datetime import date
 
@@ -58,6 +68,11 @@ PASTAS_REMANEJAMENTOS = [
 SEPARADOR_DATA = '.'
 PREFIXO_NOME   = 'Conferencia arquivo robo'
 ABA_SAIDA      = 'Planilha1'
+
+# Retry/backoff para operacoes de arquivo dentro de pastas sincronizadas pelo
+# OneDrive (podem estar temporariamente travadas por um handle de sync).
+MOVER_TENTATIVAS      = int(os.getenv('MOVER_TENTATIVAS', '6'))
+MOVER_ESPERA_SEGUNDOS = float(os.getenv('MOVER_ESPERA_SEGUNDOS', '2'))
 
 COLUNAS_CONFERENCIA = [
     'Execução', 'UO_COD', 'Grupo', 'IAG', 'Fonte', 'IPU', 'Ação',
@@ -425,7 +440,32 @@ def coletar_arquivos_origem(pastas):
     return arquivos
 
 
-def mover_com_seguranca(origem: str, pasta_destino: str):
+def remover_com_retry(caminho: str, tentativas=MOVER_TENTATIVAS, espera=MOVER_ESPERA_SEGUNDOS):
+    """Remove um arquivo dentro de pasta sincronizada pelo OneDrive, tentando
+    de novo com backoff se houver PermissionError (lock de sincronizacao).
+    Ao contrario da versao anterior, NAO engole o erro: se todas as
+    tentativas falharem, propaga a excecao para o chamador decidir o que
+    fazer (nunca falhar silenciosamente e deixar o arquivo velho para tras)."""
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            os.remove(caminho)
+            return
+        except OSError as e:
+            ultimo_erro = e
+            print(
+                f"Aviso: arquivo travado (possivel sincronizacao do OneDrive em andamento). "
+                f"Tentativa {tentativa}/{tentativas} de remover '{os.path.basename(caminho)}'. "
+                f"Aguardando {espera}s..."
+            )
+            time.sleep(espera)
+    raise ultimo_erro
+
+
+def mover_com_seguranca(origem: str, pasta_destino: str, tentativas=MOVER_TENTATIVAS, espera=MOVER_ESPERA_SEGUNDOS):
+    """Move 'origem' para dentro de 'pasta_destino' (gerando sufixo (1), (2)...
+    se ja existir um arquivo com o mesmo nome), com retry/backoff caso o
+    destino esteja temporariamente travado pelo OneDrive."""
     os.makedirs(pasta_destino, exist_ok=True)
     destino = os.path.join(pasta_destino, os.path.basename(origem))
     if os.path.exists(destino):
@@ -434,7 +474,21 @@ def mover_com_seguranca(origem: str, pasta_destino: str):
         while os.path.exists(destino):
             destino = os.path.join(pasta_destino, f'{base} ({i}){ext}')
             i += 1
-    shutil.move(origem, destino)
+
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            shutil.move(origem, destino)
+            return
+        except OSError as e:
+            ultimo_erro = e
+            print(
+                f"Aviso: origem/destino travado (possivel sincronizacao do OneDrive em andamento). "
+                f"Tentativa {tentativa}/{tentativas} de mover '{os.path.basename(origem)}'. "
+                f"Aguardando {espera}s..."
+            )
+            time.sleep(espera)
+    raise ultimo_erro
 
 
 def main():
@@ -533,15 +587,30 @@ def main():
     os.replace(caminho_tmp, destino_final)
     print(f'Salvo: {destino_final} ({len(final)} linhas no total)')
 
-    # 8) SÓ AGORA esvazia a pasta CONFERENCIA e move as origens
+    # 8) SÓ AGORA esvazia a pasta CONFERENCIA e move as origens.
+    #    Ponto original do erro: o conferencia_antigo pode estar com lock de
+    #    sincronizacao do OneDrive. Agora tenta de novo com backoff e, se
+    #    mesmo assim falhar, ABORTA em vez de seguir com o arquivo velho
+    #    esquecido na pasta (o que fazia o proximo encontrar_conferencia()
+    #    pegá-lo de novo e arriscar duplicar linhas).
     if conferencia_antigo is not None:
         if base_existente is not None:
             if os.path.abspath(conferencia_antigo) != os.path.abspath(destino_final):
                 try:
-                    os.remove(conferencia_antigo)
+                    remover_com_retry(conferencia_antigo)
                     print('Conferência de hoje consolidado e removido da pasta de origem.')
                 except OSError as e:
-                    print(f'[aviso] Consolidado salvo, mas não consegui remover o original: {e}')
+                    print(
+                        f'[ERRO] Consolidado salvo em {destino_final}, mas não foi possível '
+                        f'remover o original em {conferencia_antigo} após {MOVER_TENTATIVAS} '
+                        f'tentativas: {e}'
+                    )
+                    print(
+                        'Abortando para evitar que o arquivo antigo seja lido novamente na '
+                        'próxima execução e duplique linhas já consolidadas. Verifique se o '
+                        'OneDrive terminou de sincronizar e rode novamente.'
+                    )
+                    raise SystemExit(1)
         else:
             mover_com_seguranca(conferencia_antigo, REALIZADOS_CONFERENCIA)
             print(f'Conferência antigo arquivado em: {REALIZADOS_CONFERENCIA}')

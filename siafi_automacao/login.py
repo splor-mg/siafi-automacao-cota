@@ -42,6 +42,11 @@ PASTA_REMANEJAMENTOS_REALIZADOS = os.path.join(_onedrive_base, 'Realizados', 'Re
 # sincronizacao do OneDrive enquanto grava.
 PASTA_LOCAL = os.getenv('PASTA_LOCAL')
 
+# Retry/backoff para operacoes de arquivo dentro de pastas sincronizadas pelo
+# OneDrive (podem estar temporariamente travadas por um handle de sync).
+MOVER_TENTATIVAS      = int(os.getenv('MOVER_TENTATIVAS', '6'))
+MOVER_ESPERA_SEGUNDOS = float(os.getenv('MOVER_ESPERA_SEGUNDOS', '2'))
+
 
 # ---------------------------------------------------------------------------
 # Funcoes auxiliares
@@ -56,16 +61,35 @@ def _txt_int(v):
     return str(int(float(v)))
 
 
-def mover(origem, destino):
+def mover(origem, destino, tentativas=MOVER_TENTATIVAS, espera=MOVER_ESPERA_SEGUNDOS):
     """Move 'origem' para 'destino', sobrescrevendo se ja existir.
 
     Pre-remover o destino evita o erro 'Destination path already exists' do
     shutil.move quando a origem e o destino estao em sistemas de arquivos
     diferentes (caso tipico de WSL local <-> /mnt/c do OneDrive), situacao em
-    que o shutil.move faz copy2 + remove em vez de um rename simples."""
-    if os.path.exists(destino):
-        os.remove(destino)
-    shutil.move(origem, destino, copy_function=shutil.copyfile)
+    que o shutil.move faz copy2 + remove em vez de um rename simples.
+
+    Como o destino costuma estar dentro de uma pasta sincronizada pelo
+    OneDrive, o arquivo pode estar temporariamente com um handle aberto pelo
+    processo de sincronizacao do Windows (PermissionError / WinError 32 via
+    WSL). Nesses casos, tenta novamente com backoff antes de desistir."""
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            if os.path.exists(destino):
+                os.remove(destino)
+            shutil.move(origem, destino, copy_function=shutil.copyfile)
+            return
+        except PermissionError as e:
+            ultimo_erro = e
+            print(
+                f"Aviso: destino travado (possivel sincronizacao do OneDrive em andamento). "
+                f"Tentativa {tentativa}/{tentativas} de mover '{os.path.basename(origem)}'. "
+                f"Aguardando {espera}s..."
+            )
+            time.sleep(espera)
+    print(f"Erro: nao foi possivel mover '{origem}' para '{destino}' apos {tentativas} tentativas.")
+    raise ultimo_erro
 
 
 def organizar_realizados(pasta_origem, pasta_destino):
@@ -452,6 +476,9 @@ if __name__ == "__main__":
 
     # -----------------------------------------------------------------------
     # 5) Formata e move o arquivo atualizado para a pasta de conferencia.
+    #    Este e o ponto original do erro: destino dentro do OneDrive pode
+    #    estar com lock de sincronizacao. mover() agora tenta novamente com
+    #    backoff antes de propagar a excecao.
     # -----------------------------------------------------------------------
     formatar_planilha(ws)
     wb.save(caminho_local)
