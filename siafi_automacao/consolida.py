@@ -89,7 +89,7 @@ COLUNAS_CODIGO  = [
 # Colunas obrigatórias em cada planilha de remanejamento. Se faltar alguma,
 # o arquivo inteiro é reprovado (não dá para validar/consolidar sem elas).
 COLUNAS_OBRIGATORIAS = [
-    'UO_COD', 'Grupo', 'IAG', 'IPU', 'Ação',
+    'UO_COD', 'Grupo', 'IAG', 'Fonte', 'IPU', 'Ação',
     'GLOBAL', 'AMARRADO', 'Anular', 'Aprovar', 'UO Financiadora',
 ]
 
@@ -104,6 +104,13 @@ COLUNAS_GATILHO = [
 DIGITOS_UO       = 4        # UO_COD: exatamente 4 dígitos
 DIGITOS_ACAO     = 4        # Ação: exatamente 4 dígitos
 DIGITOS_UO_FIN   = 4        # UO Financiadora (quando exigida): exatamente 4 dígitos
+
+# Fonte: exatamente 2 dígitos. O SIAFI recebe fonte e procedência juntas num
+# único campo de 3 caracteres (ver fluxo_aprovar/fluxo_anular:
+# fill_field(11, 52, f"{fonte}{procedencia}", 3)); como a procedência (IPU)
+# ocupa 1 dígito, sobram 2 para a fonte. Se a regra de negócio mudar, ajuste
+# aqui — mas o campo do SIAFI continua com 3 posições.
+DIGITOS_FONTE    = 2
 GRUPO_MIN, GRUPO_MAX = 1, 6
 IPU_MIN, IPU_MAX     = 0, 9
 IAG_VALIDOS          = {0, 1}
@@ -243,6 +250,19 @@ def _validar_linha(row, arquivo: str, linha_excel: int, erros: list):
         add('IAG', iag, 'IAG vazio (obrigatório)')
     elif not ok_iag or iag_int not in IAG_VALIDOS:
         add('IAG', iag, 'IAG deve ser 0 ou 1')
+
+    # --- Fonte: obrigatória, inteiro, exatamente DIGITOS_FONTE dígitos ---
+    # O login.py converte a Fonte com _txt_int() sem tratar vazio: uma célula
+    # em branco só estourava lá na frente, com o SIAFI já aberto e parte das
+    # linhas processadas. Por isso a checagem é feita aqui, antes de tudo.
+    fonte = row.get('Fonte')
+    ok_fonte, fonte_int = _inteiro(fonte)
+    if _vazio_cel(fonte):
+        add('Fonte', fonte, 'Fonte vazia (obrigatório)')
+    elif not ok_fonte:
+        add('Fonte', fonte, 'Fonte deve ser um número inteiro')
+    elif _num_digitos(fonte_int) != DIGITOS_FONTE:
+        add('Fonte', fonte, f'Fonte deve ter {DIGITOS_FONTE} dígitos')
 
     # --- IPU: obrigatório, inteiro de IPU_MIN a IPU_MAX ---
     ipu = row.get('IPU')

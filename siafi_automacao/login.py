@@ -47,6 +47,12 @@ PASTA_LOCAL = os.getenv('PASTA_LOCAL')
 MOVER_TENTATIVAS      = int(os.getenv('MOVER_TENTATIVAS', '6'))
 MOVER_ESPERA_SEGUNDOS = float(os.getenv('MOVER_ESPERA_SEGUNDOS', '2'))
 
+# Tentativas de conexao com o SIAFI. Antes o laco de conexao era infinito: com
+# a VPN fora do ar o robo ficava preso para sempre, sem nunca devolver codigo
+# de erro para o robo.bat (a janela do usuario final travava sem explicacao).
+CONEXAO_TENTATIVAS      = int(os.getenv('CONEXAO_TENTATIVAS', '10'))
+CONEXAO_ESPERA_SEGUNDOS = float(os.getenv('CONEXAO_ESPERA_SEGUNDOS', '3'))
+
 
 # ---------------------------------------------------------------------------
 # Funcoes auxiliares
@@ -90,6 +96,87 @@ def mover(origem, destino, tentativas=MOVER_TENTATIVAS, espera=MOVER_ESPERA_SEGU
             time.sleep(espera)
     print(f"Erro: nao foi possivel mover '{origem}' para '{destino}' apos {tentativas} tentativas.")
     raise ultimo_erro
+
+
+def encerrar_emulador(em):
+    """Encerra o emulador ignorando falhas.
+
+    Usado tanto no caminho feliz quanto no tratamento de erro: se a sessao ja
+    caiu, o terminate() pode estourar, e nesse ponto nao ha mais nada a fazer
+    alem de garantir que o processo s3270/x3270 nao fique pendurado."""
+    if em is None:
+        return
+    try:
+        em.terminate()
+    except Exception as e:
+        print(f"Aviso: falha ao encerrar o emulador (ignorando): {e}")
+
+
+def conectar_siafi(host, visivel, tentativas=CONEXAO_TENTATIVAS, espera=CONEXAO_ESPERA_SEGUNDOS):
+    """Abre o emulador e conecta ao SIAFI, tentando novamente ate 'tentativas'
+    vezes. Devolve o emulador conectado ou aborta com SystemExit(1).
+
+    Alem da recusa de sessao do proprio mainframe ('UNABLE TO ESTABLISH
+    SESSION'), trata a falha do Emulator()/connect() em si (VPN desligada,
+    x3270 ausente, host inacessivel), que antes subia como traceback cru."""
+    ultimo_motivo = None
+    for tentativa in range(1, tentativas + 1):
+        em = None
+        try:
+            em = Emulator(visible=visivel)
+            em.connect(host)
+            em.wait_for_field()
+            if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
+                return em
+            ultimo_motivo = 'o servidor recusou a sessao (UNABLE TO ESTABLISH SESSION)'
+        except Exception as e:
+            ultimo_motivo = f'{type(e).__name__}: {e}'
+
+        encerrar_emulador(em)
+        print(f"Tentativa {tentativa}/{tentativas} de conectar em {host} falhou: {ultimo_motivo}")
+        if tentativa < tentativas:
+            print(f"Aguardando {espera}s antes de tentar novamente...")
+            time.sleep(espera)
+
+    print("")
+    print(f"Nao foi possivel conectar ao SIAFI apos {tentativas} tentativas.")
+    print(f"Ultimo motivo: {ultimo_motivo}")
+    print("Verifique se a VPN esta conectada e se o SIAFI esta no ar, e rode novamente.")
+    raise SystemExit(1)
+
+
+def resgatar_planilha(wb, ws, caminho_local, caminho_destino):
+    """Devolve a planilha para a pasta de conferencia depois de uma falha.
+
+    Sem isso, qualquer erro depois do passo 1 deixava o arquivo preso na pasta
+    local do WSL: a pasta de origem ja estava vazia e os remanejamentos ja
+    tinham sido movidos para Realizados, entao a execucao seguinte nao
+    encontrava a planilha em lugar nenhum e so restava recuperacao manual.
+
+    Como cada linha processada ja tem a coluna Progresso gravada e salva na
+    hora, o arquivo devolvido e retomado exatamente de onde parou na proxima
+    execucao (o consolida.py o encontra na pasta de conferencia e o login.py
+    so processa as linhas com Progresso vazio).
+
+    Esta funcao NUNCA propaga excecao: ela roda durante o tratamento de outro
+    erro, e deixar uma falha de resgate mascarar o erro original so dificulta
+    o diagnostico."""
+    if not os.path.exists(caminho_local):
+        return
+
+    try:
+        formatar_planilha(ws)
+        wb.save(caminho_local)
+    except Exception as e:
+        print(f"Aviso: nao foi possivel formatar/salvar a planilha no resgate: {e}")
+
+    try:
+        mover(caminho_local, caminho_destino)
+        print(f"Planilha com o progresso parcial devolvida para: {caminho_destino}")
+    except Exception as e:
+        print("")
+        print(f"ERRO: a planilha ficou parada em '{caminho_local}' e nao pode ser devolvida: {e}")
+        print(f"Mova o arquivo manualmente para '{caminho_destino}' antes da proxima execucao.")
 
 
 def organizar_realizados(pasta_origem, pasta_destino):
@@ -342,151 +429,173 @@ if __name__ == "__main__":
     print(f"{len(pendentes)} linha(s) pendente(s) para processar: {pendentes}")
 
     # -----------------------------------------------------------------------
-    # 3) Login no SIAFI
+    # 3 a 6) Daqui em diante o arquivo ja saiu da pasta de origem e o SIAFI
+    #        sera aberto. Tudo fica dentro de um try/except/finally para
+    #        garantir duas coisas que antes so aconteciam no caminho feliz:
+    #          - o emulador SEMPRE e encerrado, sem deixar processo s3270/
+    #            x3270 pendurado nem sessao aberta no mainframe;
+    #          - a planilha SEMPRE volta para a pasta de conferencia com o
+    #            progresso parcial, em vez de ficar orfa na pasta local do
+    #            WSL (de onde nenhuma execucao seguinte conseguia recupera-la).
     # -----------------------------------------------------------------------
-    while True:
-        em = Emulator(visible=siafi_visivel)
-        em.connect(siafi_host)
+    em = None
+    try:
+        # -------------------------------------------------------------------
+        # 3) Login no SIAFI
+        # -------------------------------------------------------------------
+        em = conectar_siafi(siafi_host, siafi_visivel)
+
+        em.fill_field(19, 13, sistema, 8)
+        em.fill_field(20, 13, usuario, 8)
+        em.fill_field(21, 13, senha, 8)
+        em.send_enter()
+
+        max_tentativas = 10
+        tentativas = 0
+        while tentativas < max_tentativas:
+            time.sleep(1)
+            try:
+                em.send_enter()
+                if em.string_found(1, 13, 'Logon executado com sucesso'):
+                    print("Login realizado com sucesso!")
+                    break
+                else:
+                    print(f"Tentativa {tentativas + 1} - tela intermediária, avançando...")
+                    em.send_enter()
+            except Exception:
+                # Exception (e nao bare except) para nao engolir um Ctrl+C do
+                # usuario, que antes virava "tela de aviso detectada".
+                print(f"Tentativa {tentativas + 1} - tela de aviso detectada, passando...")
+                em.send_enter()
+            tentativas += 1
+
+        if tentativas == max_tentativas:
+            print("Não foi possível fazer login após várias tentativas.")
+            raise SystemExit(1)
+
+        em.fill_field(1, 2, sistema, 4)
+        em.send_enter()
+
+        # nova tela buscando login...
+        max_tentativas = 10
+        tentativas = 0
+        while tentativas < max_tentativas:
+            time.sleep(1)
+            try:
+                em.send_enter()
+                if em.string_found(22, 11, 'Unidade Executora'):
+                    print("Texto encontrado")
+                    break
+                else:
+                    print(f"Tentativa {tentativas + 1} - tela intermediária, avançando...")
+                    em.send_enter()
+            except Exception:
+                print(f"Tentativa {tentativas + 1} - tela de aviso detectada, passando...")
+                em.send_enter()
+            tentativas += 1
+
+        if tentativas == max_tentativas:
+            print("Não foi possível fazer login após várias tentativas.")
+            raise SystemExit(1)
+
+        # Entrar com a Unidade Executora
+        em.fill_field(22, 30, unidade_executora, 7)
+        em.send_enter()
+        em.wait_for_field()
+        # Fim do login
+
+        # Entrar em 03 - Movimentacao Orcamentaria
+        em.fill_field(21, 19, '03', 2)
+        em.send_enter()
         em.wait_for_field()
 
-        if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
-            break
+        # Entrar em 02 - Aprovacao de Cota Orcamentaria
+        em.fill_field(21, 19, '02', 2)
+        em.send_enter()
+        em.wait_for_field()
 
-        print("Não foi possível estabelecer conexão com o servidor. Tentando novamente...")
-        em.terminate()
-        time.sleep(1)
+        # -------------------------------------------------------------------
+        # 4) Processa cada linha pendente e grava o resultado na coluna
+        #    Progresso
+        # -------------------------------------------------------------------
+        for r in pendentes:
+            get = lambda nome: ws.cell(row=r, column=col[nome]).value
+            data_row = montar_data_row(get, month)
 
-    em.fill_field(19, 13, sistema, 8)
-    em.fill_field(20, 13, usuario, 8)
-    em.fill_field(21, 13, senha, 8)
-    em.send_enter()
+            # Remanejamentos so sao permitidos para IAG 0.
+            if data_row['iag'] == '1':
+                print(f"Linha {r}: IAG 1, pulando.")
+                ws.cell(row=r, column=col['Progresso']).value = 'IAG 1 - Não Realizado'
+                wb.save(caminho_local)
+                continue
 
-    max_tentativas = 10
-    tentativas = 0
-    while tentativas < max_tentativas:
-        time.sleep(1)
-        try:
-            em.send_enter()
-            if em.string_found(1, 13, 'Logon executado com sucesso'):
-                print("Login realizado com sucesso!")
-                break
+            # Linha sem GLOBAL e sem AMARRADO nao e processavel no SIAFI:
+            # registra o motivo e segue para a proxima.
+            if data_row['tipo_global'] != 'x' and data_row['tipo_amarrado'] == '0':
+                print(f"Linha {r}: sem GLOBAL/AMARRADO definido, pulando.")
+                ws.cell(row=r, column=col['Progresso']).value = 'Linha sem GLOBAL/AMARRADO definido'
+                wb.save(caminho_local)
+                continue
+
+            if data_row['valor_anulacao'] != 0:
+                print("realizando procedimento de anulação")
+            elif data_row['valor_aprovacao'] != 0:
+                print("realizando procedimento de aprovação")
+
+            print(
+                f"Processando linha {r} | UO: {data_row['uo']}, Grupo: {data_row['grupo']}, "
+                f"Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, "
+                f"Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}"
+            )
+
+            retorno = None
+            if data_row['valor_anulacao'] != 0:
+                retorno = anular(em, data_row)
+            elif data_row['valor_aprovacao'] != 0:
+                retorno = aprovar(em, data_row)
             else:
-                print(f"Tentativa {tentativas + 1} - tela intermediária, avançando...")
-                em.send_enter()
-        except:
-            print(f"Tentativa {tentativas + 1} - tela de aviso detectada, passando...")
-            em.send_enter()
-        tentativas += 1
+                retorno = 'Linha sem valor de anulação/aprovação'
 
-    if tentativas == max_tentativas:
-        print("Não foi possível fazer login após várias tentativas.")
-        em.terminate()
-        raise SystemExit(1)
-
-    em.fill_field(1, 2, sistema, 4)
-    em.send_enter()
-
-    # nova tela buscando login...
-    max_tentativas = 10
-    tentativas = 0
-    while tentativas < max_tentativas:
-        time.sleep(1)
-        try:
-            em.send_enter()
-            if em.string_found(22, 11, 'Unidade Executora'):
-                print("Texto encontrado")
-                break
-            else:
-                print(f"Tentativa {tentativas + 1} - tela intermediária, avançando...")
-                em.send_enter()
-        except:
-            print(f"Tentativa {tentativas + 1} - tela de aviso detectada, passando...")
-            em.send_enter()
-        tentativas += 1
-
-    if tentativas == max_tentativas:
-        print("Não foi possível fazer login após várias tentativas.")
-        em.terminate()
-        raise SystemExit(1)
-
-    # Entrar com a Unidade Executora
-    em.fill_field(22, 30, unidade_executora, 7)
-    em.send_enter()
-    em.wait_for_field()
-    # Fim do login
-
-    # Entrar em 03 - Movimentacao Orcamentaria
-    em.fill_field(21, 19, '03', 2)
-    em.send_enter()
-    em.wait_for_field()
-
-    # Entrar em 02 - Aprovacao de Cota Orcamentaria
-    em.fill_field(21, 19, '02', 2)
-    em.send_enter()
-    em.wait_for_field()
-
-    # -----------------------------------------------------------------------
-    # 4) Processa cada linha pendente e grava o resultado na coluna Progresso
-    # -----------------------------------------------------------------------
-    for r in pendentes:
-        get = lambda nome: ws.cell(row=r, column=col[nome]).value
-        data_row = montar_data_row(get, month)
-
-        # Remanejamentos so sao permitidos para IAG 0.
-        if data_row['iag'] == '1':
-            print(f"Linha {r}: IAG 1, pulando.")
-            ws.cell(row=r, column=col['Progresso']).value = 'IAG 1 - Não Realizado'
+            # Grava o resultado e salva imediatamente (resiliencia: se o SIAFI
+            # travar no meio, o progresso ja concluido fica registrado).
+            ws.cell(row=r, column=col['Progresso']).value = traduzir_progresso(retorno)
             wb.save(caminho_local)
-            continue
 
-        # Linha sem GLOBAL e sem AMARRADO nao e processavel no SIAFI:
-        # registra o motivo e segue para a proxima.
-        if data_row['tipo_global'] != 'x' and data_row['tipo_amarrado'] == '0':
-            print(f"Linha {r}: sem GLOBAL/AMARRADO definido, pulando.")
-            ws.cell(row=r, column=col['Progresso']).value = 'Linha sem GLOBAL/AMARRADO definido'
-            wb.save(caminho_local)
-            continue
+        print('Fluxo finalizado')
+        # Encerra o emulador ja aqui (como antes) para a janela do x3270 fechar
+        # assim que o SIAFI nao e mais necessario. O finally cobre os casos de
+        # erro, e o em = None evita encerrar duas vezes.
+        encerrar_emulador(em)
+        em = None
 
-        if data_row['valor_anulacao'] != 0:
-            print("realizando procedimento de anulação")
-        elif data_row['valor_aprovacao'] != 0:
-            print("realizando procedimento de aprovação")
-
-        print(
-            f"Processando linha {r} | UO: {data_row['uo']}, Grupo: {data_row['grupo']}, "
-            f"Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, "
-            f"Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}"
-        )
-
-        retorno = None
-        if data_row['valor_anulacao'] != 0:
-            retorno = anular(em, data_row)
-        elif data_row['valor_aprovacao'] != 0:
-            retorno = aprovar(em, data_row)
-        else:
-            retorno = 'Linha sem valor de anulação/aprovação'
-
-        # Grava o resultado e salva imediatamente (resiliencia: se o SIAFI
-        # travar no meio, o progresso ja concluido fica registrado).
-        ws.cell(row=r, column=col['Progresso']).value = traduzir_progresso(retorno)
+        # -------------------------------------------------------------------
+        # 5) Formata e move o arquivo atualizado para a pasta de conferencia.
+        #    Este e o ponto original do erro: destino dentro do OneDrive pode
+        #    estar com lock de sincronizacao. mover() agora tenta novamente com
+        #    backoff antes de propagar a excecao.
+        # -------------------------------------------------------------------
+        formatar_planilha(ws)
         wb.save(caminho_local)
+        mover(caminho_local, caminho_destino)
+        print(f"Planilha atualizada e movida para a pasta de conferencia: {caminho_destino}")
 
-    print('Fluxo finalizado')
-    em.terminate()
+        # -------------------------------------------------------------------
+        # 6) Organiza os .xlsx soltos em Realizados -> Remanejamentos realizados.
+        # -------------------------------------------------------------------
+        organizar_realizados(PASTA_REALIZADOS, PASTA_REMANEJAMENTOS_REALIZADOS)
+        print("Pasta Realizados organizada.")
 
-    # -----------------------------------------------------------------------
-    # 5) Formata e move o arquivo atualizado para a pasta de conferencia.
-    #    Este e o ponto original do erro: destino dentro do OneDrive pode
-    #    estar com lock de sincronizacao. mover() agora tenta novamente com
-    #    backoff antes de propagar a excecao.
-    # -----------------------------------------------------------------------
-    formatar_planilha(ws)
-    wb.save(caminho_local)
-    mover(caminho_local, caminho_destino)
-    print(f"Planilha atualizada e movida para a pasta de conferencia: {caminho_destino}")
+    except BaseException as e:
+        # BaseException (nao Exception) para cobrir tambem o Ctrl+C do usuario
+        # e os SystemExit(1) de falha de login: em todos esses casos a planilha
+        # ja esta na pasta local e precisa voltar para a de conferencia.
+        print("")
+        if isinstance(e, SystemExit):
+            print("Execucao interrompida antes de concluir todas as linhas.")
+        else:
+            print(f"Execucao interrompida por erro: {type(e).__name__}: {e}")
+        resgatar_planilha(wb, ws, caminho_local, caminho_destino)
+        raise
 
-    # -----------------------------------------------------------------------
-    # 6) Organiza os .xlsx soltos em Realizados -> Remanejamentos realizados.
-    # -----------------------------------------------------------------------
-    organizar_realizados(PASTA_REALIZADOS, PASTA_REMANEJAMENTOS_REALIZADOS)
-    print("Pasta Realizados organizada.")
+    finally:
+        encerrar_emulador(em)
