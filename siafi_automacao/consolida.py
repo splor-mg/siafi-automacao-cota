@@ -50,6 +50,8 @@ from datetime import date
 import pandas as pd
 from dotenv import load_dotenv
 
+from relato import relato
+
 load_dotenv()
 
 # ===================== CONFIGURAÇÃO =====================
@@ -606,6 +608,9 @@ def main():
 
     os.replace(caminho_tmp, destino_final)
     print(f'Salvo: {destino_final} ({len(final)} linhas no total)')
+    relato('planilha',
+           f'{len(arquivos_origem)} planilha(s) lida(s), validação OK '
+           f'({len(final)} linhas)')
 
     # 8) SÓ AGORA esvazia a pasta CONFERENCIA e move as origens.
     #    Ponto original do erro: o conferencia_antigo pode estar com lock de
