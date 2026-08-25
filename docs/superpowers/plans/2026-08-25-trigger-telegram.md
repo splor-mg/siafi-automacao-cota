@@ -1409,12 +1409,26 @@ TRAVA = threading.Lock()
 ```python
 def enviar(texto):
     """Manda uma mensagem para o grupo. Nunca levanta excecao: falha de rede
-    aqui nao pode derrubar o bot nem interromper o robo."""
+    aqui nao pode derrubar o bot nem interromper o robo.
+
+    Se o Telegram recusar a mensagem (tipicamente HTML malformado), tenta de
+    novo como texto puro. Sem isso, uma recusa passaria em silencio e a equipe
+    simplesmente nao receberia o resultado da execucao.
+    """
+    texto = redigir(texto, SEGREDOS)
     try:
+        r = requests.post(f'{API}/sendMessage', timeout=30, data={
+            'chat_id': CHAT_AUTORIZADO,
+            'text': texto,
+            'parse_mode': 'HTML',
+        })
+        if r.status_code == 200:
+            return
+        print(f'[aviso] Telegram recusou a mensagem ({r.status_code}): {r.text}')
+        print('[aviso] reenviando como texto puro')
         requests.post(f'{API}/sendMessage', timeout=30, data={
             'chat_id': CHAT_AUTORIZADO,
-            'text': redigir(texto, SEGREDOS),
-            'parse_mode': 'HTML',
+            'text': texto.replace('<pre>', '').replace('</pre>', ''),
         })
     except Exception as e:
         print(f'[aviso] falha ao enviar mensagem: {e}')
