@@ -31,3 +31,46 @@ def test_ler_eventos_ignora_linha_incompleta(tmp_path):
 
 def test_ler_eventos_de_arquivo_inexistente(tmp_path):
     assert ler_eventos(tmp_path / 'nao-existe') == []
+
+
+def test_tratar_ignora_comando_desconhecido(monkeypatch):
+    """Texto que nao e comando nao pode disparar nada."""
+    import bot_telegram
+    enviadas = []
+    monkeypatch.setattr(bot_telegram, 'enviar', enviadas.append)
+    monkeypatch.setattr(bot_telegram, 'comando_rodar',
+                        lambda quem: enviadas.append('RODOU'))
+
+    bot_telegram.tratar({'message': {'text': 'bom dia pessoal',
+                                     'from': {'first_name': 'Ana'}}})
+
+    assert enviadas == []
+
+
+def test_tratar_aceita_comando_com_nome_do_bot(monkeypatch):
+    """Em grupo o Telegram entrega '/rodar@nome_do_bot'."""
+    import bot_telegram
+    chamadas = []
+    monkeypatch.setattr(bot_telegram, 'comando_rodar', chamadas.append)
+
+    bot_telegram.tratar({'message': {'text': '/rodar@robo_siafi_bot',
+                                     'from': {'first_name': 'Ana'}}})
+
+    assert chamadas == ['Ana']
+
+
+def test_caminhos_ultima_execucao_sem_arquivo(monkeypatch, tmp_path):
+    import bot_telegram
+    monkeypatch.setattr(bot_telegram, 'ARQUIVO_ULTIMA',
+                        str(tmp_path / 'nao-existe'))
+    assert bot_telegram.caminhos_ultima_execucao() == (None, None)
+
+
+def test_caminhos_ultima_execucao_le_as_duas_linhas(monkeypatch, tmp_path):
+    import bot_telegram
+    arquivo = tmp_path / '.ultima_execucao'
+    arquivo.write_text('/tmp/robo.log\n/tmp/relato.jsonl\n', encoding='utf-8')
+    monkeypatch.setattr(bot_telegram, 'ARQUIVO_ULTIMA', str(arquivo))
+
+    assert bot_telegram.caminhos_ultima_execucao() == (
+        '/tmp/robo.log', '/tmp/relato.jsonl')
