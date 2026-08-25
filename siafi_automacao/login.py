@@ -257,6 +257,11 @@ def traduzir_progresso(retorno):
             'Elemento/item não marcado para a UO beneficiada',
         "SALDO DE CREDITO ORCAMENTARIO A APROVAR POR PROJ/ATIV ZERADO.":
             'Saldo de crédito a aprovar zerado',
+        # Unico item do mapa que nao vem do mainframe: e o retorno sintetico
+        # que login.py atribui a uma linha sem valor de anulacao/aprovacao,
+        # que por isso nunca chega a ser enviada ao SIAFI.
+        "Linha sem valor de anulação/aprovação":
+            'Linha sem valor de anulação/aprovação',
     }
     return mapa.get(retorno, 'Ok')
 
@@ -551,8 +556,13 @@ if __name__ == "__main__":
             else:
                 operacao = 'sem valor'
 
+            # A frase "realizando procedimento de X" so faz sentido quando ha
+            # de fato um procedimento a realizar no SIAFI.
+            prefixo = ('' if operacao == 'sem valor'
+                       else f"realizando procedimento de {operacao}\n")
+
             relato('linha',
-                   f"realizando procedimento de {operacao}\n"
+                   f"{prefixo}"
                    f"Processando linha {r} | UO: {data_row['uo']}, "
                    f"Grupo: {data_row['grupo']}, Acao: {data_row['acao']}, "
                    f"Fonte: {data_row['fonte']}, "
@@ -594,8 +604,9 @@ if __name__ == "__main__":
         formatar_planilha(ws)
         wb.save(caminho_local)
         mover(caminho_local, caminho_destino)
-        print(f"Planilha atualizada e movida para a pasta de conferencia: {caminho_destino}")
-        relato('planilha_final', os.path.basename(caminho_destino))
+        relato('planilha_final',
+               f"Planilha atualizada e movida para a pasta de conferencia: {caminho_destino}",
+               arquivo=os.path.basename(caminho_destino))
 
         # -------------------------------------------------------------------
         # 6) Organiza os .xlsx soltos em Realizados -> Remanejamentos realizados.
