@@ -127,6 +127,94 @@ A primeira instalação tem até **3 etapas**. Faça uma de cada vez, na ordem.
 
 ---
 
+# PARTE 3 — Acionar o robô pelo Telegram (opcional)
+
+> Isto é uma forma alternativa de ligar o robô, sem precisar estar na frente
+> do computador. Ele executa exatamente a mesma sequência do duplo-clique no
+> `robo.bat`.
+
+## Comandos no grupo
+
+| Comando | O que faz |
+|---------|-----------|
+| `/rodar` | Executa o robô |
+| `/status` | Diz se há execução em andamento |
+| `/log` | Envia o log completo da última execução |
+| `/ajuda` | Lista os comandos |
+
+Depois do `/rodar` o bot manda três mensagens no grupo: o aviso de início, o
+resumo da planilha e do login, e no fim o resultado linha a linha.
+
+## Duas execuções nunca acontecem ao mesmo tempo
+
+Se alguém der `/rodar` enquanto o robô já está em andamento — pelo Telegram ou
+por duplo-clique no `robo.bat` — o bot responde que já existe execução e
+**não** dispara uma segunda. Vale o contrário também: se o `robo.bat` for
+acionado enquanto o bot está executando, a janela preta avisa e não roda.
+Deixar duas execuções mexerem na mesma cota ao mesmo tempo bagunçaria o
+resultado, então o robô sempre recusa a segunda.
+
+## Se uma execução travar
+
+O bot **não mata** uma execução travada sozinha. Interromper o robô no meio da
+aprovação de cotas deixaria linhas em estado indefinido no SIAFI — pior do que
+esperar. Use `/status` para ver há quanto tempo a execução está rodando. Se
+for mesmo preciso interromper, isso é decisão de quem entende do assunto,
+feita manualmente no servidor, não pelo grupo do Telegram.
+
+## Onde ficam os logs
+
+Cada execução grava um arquivo em `data/logs/`, dentro da pasta do robô no
+Ubuntu. O `/log` envia o da execução mais recente — é essa informação que a
+equipe deve passar para quem estiver dando suporte.
+
+## Quem pode acionar
+
+Qualquer pessoa do grupo. **Entrar no grupo é o mesmo que ganhar permissão de
+aprovar e anular cota no SIAFI de produção** — não adicione ninguém sem
+combinar antes. Mensagens de fora do grupo são ignoradas.
+
+## Instalação (uma vez, na máquina do robô)
+
+1. Crie o bot no `@BotFather` do Telegram (`/newbot`) e guarde o token.
+2. Adicione o bot ao grupo da equipe.
+3. Mande qualquer mensagem no grupo e abra
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` no navegador. Anote o
+   `chat.id` (é negativo, algo como `-1001234567890`).
+4. No Ubuntu, preencha as duas variáveis no `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=<token do BotFather>
+   TELEGRAM_CHAT_ID=<id do grupo>
+   ```
+5. Instale o serviço:
+   ```bash
+   cd ~/code/splor-mg/siafi-automacao-cota
+   bash instalar_bot.sh
+   ```
+6. No **Windows**, abra o PowerShell **como administrador** e crie a tarefa
+   que acorda o WSL quando a máquina liga (sem ela o bot só sobe quando alguém
+   abre um terminal do Ubuntu):
+   ```powershell
+   schtasks /create /tn "Robo SIAFI - acordar WSL" /tr "wsl.exe -d Ubuntu -e true" /sc onlogon /f
+   ```
+
+Depois de reiniciar o Windows é preciso **fazer login na conta do usuário**
+para o WSL subir — a tarefa é `onlogon`. Se a máquina ficar na tela de login,
+o bot não responde.
+
+## Se o bot não responder
+
+```bash
+systemctl status siafi-bot     # o serviço está no ar?
+journalctl -u siafi-bot -n 50  # o que ele registrou
+sudo systemctl restart siafi-bot
+```
+
+Se o `systemctl` disser que o serviço não existe, o WSL provavelmente não subiu
+com systemd: rode `wsl --shutdown` no Windows e abra o Ubuntu de novo.
+
+---
+
 # O que significa a coluna "Progresso"
 
 Quando o robô termina, ele escreve o resultado de cada linha na coluna **Progresso** da planilha:
