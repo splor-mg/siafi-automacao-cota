@@ -140,9 +140,12 @@ def conectar_siafi(host, visivel, tentativas=CONEXAO_TENTATIVAS, espera=CONEXAO_
             time.sleep(espera)
 
     print("")
-    print(f"Nao foi possivel conectar ao SIAFI apos {tentativas} tentativas.")
-    print(f"Ultimo motivo: {ultimo_motivo}")
-    print("Verifique se a VPN esta conectada e se o SIAFI esta no ar, e rode novamente.")
+    # relato (e nao print): acionado pelo Telegram, ninguem esta olhando o
+    # console — o motivo real da falha precisa chegar ao grupo.
+    relato('erro',
+           f"Nao foi possivel conectar ao SIAFI apos {tentativas} tentativas.\n"
+           f"Ultimo motivo: {ultimo_motivo}\n"
+           "Verifique se a VPN esta conectada e se o SIAFI esta no ar, e rode novamente.")
     raise SystemExit(1)
 
 
@@ -479,7 +482,7 @@ if __name__ == "__main__":
             tentativas += 1
 
         if tentativas == max_tentativas:
-            print("Não foi possível fazer login após várias tentativas.")
+            relato('erro', "Não foi possível fazer login após várias tentativas.")
             raise SystemExit(1)
 
         em.fill_field(1, 2, sistema, 4)
@@ -504,7 +507,7 @@ if __name__ == "__main__":
             tentativas += 1
 
         if tentativas == max_tentativas:
-            print("Não foi possível fazer login após várias tentativas.")
+            relato('erro', "Não foi possível fazer login após várias tentativas.")
             raise SystemExit(1)
 
         # Entrar com a Unidade Executora

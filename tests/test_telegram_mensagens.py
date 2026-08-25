@@ -283,3 +283,34 @@ def test_ler_lista_de_ids_tolera_espacos_e_vazio():
     assert ler_lista_de_ids('') == []
     assert ler_lista_de_ids(None) == []
     assert ler_lista_de_ids('  ') == []
+
+
+# --- Falha antes de processar qualquer linha --------------------------------
+
+def test_final_sem_nenhuma_linha_nao_deixa_bloco_vazio():
+    """Quando o robo falha antes de processar qualquer linha, o <pre> vazio
+    vira um buraco branco no meio da mensagem do grupo."""
+    eventos = [
+        {'tipo': 'planilha', 'texto': '1 planilha(s) lida(s), validação OK'},
+        {'tipo': 'erro', 'texto': 'Não foi possível conectar ao SIAFI.'},
+    ]
+    msg = montar_final(eventos, codigo=1, duracao_seg=32)
+
+    assert '<pre>' not in msg
+    assert 'Nenhuma linha chegou a ser processada' in msg
+    assert 'Não foi possível conectar ao SIAFI.' in msg
+
+
+def test_final_mostra_todos_os_motivos_de_erro():
+    """O motivo real (VPN, SIAFI fora do ar) vem antes do aviso generico de
+    interrupcao. Mostrar so o primeiro esconderia um dos dois."""
+    eventos = [
+        {'tipo': 'erro', 'texto': 'Não foi possível conectar ao SIAFI após 10 '
+                                  'tentativas. Verifique a VPN.'},
+        {'tipo': 'erro', 'texto': 'Execução interrompida antes de concluir '
+                                  'todas as linhas.'},
+    ]
+    msg = montar_final(eventos, codigo=1, duracao_seg=32)
+
+    assert 'Verifique a VPN' in msg
+    assert 'interrompida antes de concluir' in msg

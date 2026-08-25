@@ -184,9 +184,15 @@ def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM):
     if planilha:
         rodape += f'\nPlanilha: {escape(planilha)}'
 
-    erro = next((e['texto'] for e in eventos if e['tipo'] == 'erro'), None)
-    if erro:
+    # Todos os motivos, nao so o primeiro: a causa real (VPN fora, SIAFI no ar)
+    # vem antes do aviso generico de interrupcao, e o grupo precisa dos dois
+    # para saber se e problema de rede ou do robo.
+    for erro in (e['texto'] for e in eventos if e['tipo'] == 'erro'):
         rodape += f'\n{escape(erro)}'
+
+    if not itens:
+        # Um <pre> vazio vira um buraco branco no meio da mensagem.
+        return f'{cabecalho}\n\nNenhuma linha chegou a ser processada.\n\n{rodape}'
 
     corpo = '\n'.join(_texto_item(i) for i in itens)
     mensagem = _montar(cabecalho, corpo, rodape)
