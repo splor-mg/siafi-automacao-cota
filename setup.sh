@@ -144,6 +144,7 @@ fi
 # --- Bot do Telegram (opcional) ---------------------------------------------
 # Quem nao usa o Telegram deixa em branco e segue com o robo.bat normalmente.
 if ! grep -q "^TELEGRAM_BOT_TOKEN=" .env 2>/dev/null; then
+    _novas_vars=true
     echo ""
     echo "Bot do Telegram (opcional - Enter para pular)."
     read -rp "  TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
@@ -151,6 +152,7 @@ if ! grep -q "^TELEGRAM_BOT_TOKEN=" .env 2>/dev/null; then
 fi
 
 if ! grep -q "^TELEGRAM_CHAT_ID=" .env 2>/dev/null; then
+    _novas_vars=true
     read -rp "  TELEGRAM_CHAT_ID (id do grupo, negativo): " TELEGRAM_CHAT_ID
     printf 'TELEGRAM_CHAT_ID=%s\n' "$TELEGRAM_CHAT_ID" >> .env
 fi
