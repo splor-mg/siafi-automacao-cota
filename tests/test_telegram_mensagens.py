@@ -176,3 +176,72 @@ def test_final_poda_linhas_efetuadas_quando_estoura_o_limite():
     assert 'Linha 999' in msg          # a que deu erro sobrevive
     assert 'linha(s) efetuada(s) (veja /log)' in msg
     assert '200 efetuada(s)' in msg    # o resumo continua contando tudo
+
+
+def test_final_com_centenas_de_erros_continua_html_valido():
+    """Cortar a string HTML pronta deixaria <pre> sem fechamento, e o Telegram
+    recusaria a mensagem inteira — a equipe nao receberia nada."""
+    eventos = eventos_de_exemplo()[:3]
+    for linha in range(10, 310):
+        eventos += [
+            {'tipo': 'linha', 'texto': '...', 'linha': linha,
+             'operacao': 'aprovação', 'uo': '1261', 'acao': '4511',
+             'fonte': '10', 'valor': 7400000},
+            {'tipo': 'retorno', 'texto': '...',
+             'retorno': '0139- VALOR A APROVAR MAIOR QUE SALDO DISPONIVEL NO PROJ/ATIV.'},
+            {'tipo': 'resultado', 'texto': '...', 'linha': linha, 'ok': False,
+             'progresso': 'Valor a aprovar maior que o saldo disponível'},
+        ]
+
+    msg = montar_final(eventos, codigo=0, duracao_seg=600)
+
+    assert len(msg) <= 4096
+    assert msg.count('<pre>') == 1
+    assert msg.count('</pre>') == 1
+    assert msg.index('<pre>') < msg.index('</pre>')
+    assert 'mensagem cortada' in msg
+
+
+def test_final_escapa_nome_de_arquivo_com_caractere_especial():
+    eventos = eventos_de_exemplo()
+    eventos[-1] = {'tipo': 'planilha_final', 'texto': '...',
+                   'arquivo': 'Remanejamento Fulano & Cia <2>.xlsx'}
+    msg = montar_final(eventos, codigo=0, duracao_seg=10)
+    assert 'Fulano &amp; Cia &lt;2&gt;.xlsx' in msg
+    assert '<2>' not in msg
+
+
+def test_final_escapa_texto_do_erro():
+    eventos = eventos_de_exemplo()[:8] + [
+        {'tipo': 'erro',
+         'texto': 'Execução interrompida por erro: KeyError: <coluna & tal>'},
+    ]
+    msg = montar_final(eventos, codigo=1, duracao_seg=60)
+    assert '&lt;coluna &amp; tal&gt;' in msg
+    assert '<coluna' not in msg
+
+
+def test_linha_sem_valor_mostra_o_motivo_e_nao_fala_em_interrupcao():
+    """Linha sem valor nunca chega ao SIAFI, entao nunca ha 'retorno'. Dizer
+    'execucao interrompida' contradiria o cabecalho 'concluido'."""
+    eventos = eventos_de_exemplo()[:3] + [
+        {'tipo': 'linha', 'texto': '...', 'linha': 6, 'operacao': 'sem valor',
+         'uo': '1261', 'acao': '4511', 'fonte': '10', 'valor': 0},
+        {'tipo': 'resultado', 'texto': '...', 'linha': 6, 'ok': False,
+         'progresso': 'Linha sem valor de anulação/aprovação'},
+    ]
+    msg = montar_final(eventos, codigo=0, duracao_seg=5)
+    assert 'Linha sem valor de anulação/aprovação' in msg
+    assert 'execução interrompida' not in msg
+
+
+def test_linha_sem_resultado_nenhum_admite_interrupcao():
+    """Se o robo caiu depois de abrir a linha e antes de qualquer resultado, ai
+    sim 'execucao interrompida' e a informacao correta."""
+    eventos = eventos_de_exemplo()[:3] + [
+        {'tipo': 'linha', 'texto': '...', 'linha': 7, 'operacao': 'aprovação',
+         'uo': '1261', 'acao': '4511', 'fonte': '10', 'valor': 7400000},
+        {'tipo': 'erro', 'texto': 'Execução interrompida por erro: TimeoutError'},
+    ]
+    msg = montar_final(eventos, codigo=1, duracao_seg=30)
+    assert 'sem retorno (execução interrompida)' in msg

@@ -107,12 +107,35 @@ def _texto_item(item):
     cabecalho = (f"Linha {item['linha']} · {item['operacao']} · "
                  f"UO {item['uo']} · Ação {item['acao']} · "
                  f"Fonte {item['fonte']} · {formatar_valor(item['valor'])}")
-    retorno = item['retorno'] or 'sem retorno (execução interrompida)'
-    return f"{cabecalho}\n   {retorno}"
+
+    if item['retorno']:
+        detalhe = item['retorno']
+    elif item.get('progresso'):
+        # Linha que nunca chegou ao SIAFI (ex.: sem valor preenchido na
+        # planilha). O 'progresso' diz o motivo real; dizer "execucao
+        # interrompida" aqui seria mentira, a execucao terminou bem.
+        detalhe = item['progresso']
+    else:
+        detalhe = 'sem retorno (execução interrompida)'
+
+    return f"{cabecalho}\n   {detalhe}"
 
 
 def _montar(cabecalho, corpo, rodape):
     return f"{cabecalho}\n\n<pre>{escape(corpo)}</pre>\n\n{rodape}"
+
+
+def _cortar_corpo(cabecalho, corpo, rodape, limite):
+    """Corta o corpo por linhas inteiras ate a mensagem montada caber.
+
+    Cortar a string HTML ja pronta deixaria a tag <pre> sem fechamento ou uma
+    entidade (&amp;) pela metade, e o Telegram recusa a mensagem inteira por
+    HTML invalido — a equipe nao receberia nada.
+    """
+    aviso = '\n… (mensagem cortada, veja /log)'
+    while corpo and len(_montar(cabecalho, corpo + aviso, rodape)) > limite:
+        corpo = '\n'.join(corpo.split('\n')[:-1])
+    return corpo + aviso
 
 
 def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM):
@@ -136,11 +159,11 @@ def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM):
     planilha = next((e['arquivo'] for e in eventos
                      if e['tipo'] == 'planilha_final'), None)
     if planilha:
-        rodape += f'\nPlanilha: {planilha}'
+        rodape += f'\nPlanilha: {escape(planilha)}'
 
     erro = next((e['texto'] for e in eventos if e['tipo'] == 'erro'), None)
     if erro:
-        rodape += f'\n{erro}'
+        rodape += f'\n{escape(erro)}'
 
     corpo = '\n'.join(_texto_item(i) for i in itens)
     mensagem = _montar(cabecalho, corpo, rodape)
@@ -154,5 +177,10 @@ def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM):
     corpo = '\n'.join(_texto_item(i) for i in mantidos)
     corpo += f'\n…+{omitidas} linha(s) efetuada(s) (veja /log)'
 
-    # Guarda final: se nem assim couber (execucao com centenas de erros), corta.
-    return _montar(cabecalho, corpo, rodape)[:limite]
+    mensagem = _montar(cabecalho, corpo, rodape)
+    if len(mensagem) <= limite:
+        return mensagem
+
+    # Guarda final: nem a poda bastou (execucao com centenas de erros).
+    return _montar(cabecalho, _cortar_corpo(cabecalho, corpo, rodape, limite),
+                   rodape)
