@@ -141,6 +141,20 @@ if ! grep -q "^PASTA_LOCAL=" .env 2>/dev/null; then
     echo "PASTA_LOCAL salvo."
 fi
 
+# --- Bot do Telegram (opcional) ---------------------------------------------
+# Quem nao usa o Telegram deixa em branco e segue com o robo.bat normalmente.
+if ! grep -q "^TELEGRAM_BOT_TOKEN=" .env 2>/dev/null; then
+    echo ""
+    echo "Bot do Telegram (opcional - Enter para pular)."
+    read -rp "  TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
+    printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN" >> .env
+fi
+
+if ! grep -q "^TELEGRAM_CHAT_ID=" .env 2>/dev/null; then
+    read -rp "  TELEGRAM_CHAT_ID (id do grupo, negativo): " TELEGRAM_CHAT_ID
+    printf 'TELEGRAM_CHAT_ID=%s\n' "$TELEGRAM_CHAT_ID" >> .env
+fi
+
 if [ "$_novas_vars" = false ]; then
     echo ".env completo — mantendo variáveis existentes."
 fi
