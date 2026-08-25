@@ -231,6 +231,25 @@ Depois de reiniciar o Windows é preciso **fazer login na conta do usuário**
 para o WSL subir — a tarefa é `onlogon`. Se a máquina ficar na tela de login,
 o bot não responde.
 
+## Depois de atualizar o código do robô
+
+O robô se atualiza sozinho: o `rodar.sh` dá `git pull` antes de cada execução.
+O **bot** não — ele carrega o código dele uma vez só, quando o serviço sobe.
+
+Por isso, se a mudança for em `bot_telegram.py`, `telegram_mensagens.py` ou
+`relato.py`, é preciso reiniciar o serviço:
+
+```bash
+sudo systemctl restart siafi-bot
+```
+
+Mudanças em `login.py`, `consolida.py`, `fluxo_aprovar.py`, `fluxo_anular.py`
+ou `rodar.sh` valem na execução seguinte, sem reiniciar nada.
+
+> A armadilha: um `git pull` (feito pelo próprio robô numa execução) atualiza
+> os arquivos do bot no disco, mas o bot continua rodando a versão antiga até
+> alguém reiniciar. O disco fica novo e o comportamento fica velho.
+
 ## Se o bot não responder
 
 ```bash
