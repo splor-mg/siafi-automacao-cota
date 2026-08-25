@@ -676,6 +676,8 @@ Expected: FAIL — `rodar.sh` não existe (`FileNotFoundError` no `shutil.copy`)
 #   0   sucesso
 #   10  ja existe uma execucao em andamento (lock tomado)
 #   *   propagado do login.py
+# Sem '-e' de proposito: a falha do 'git pull' precisa apenas avisar e seguir
+# com a versao local, nao abortar a execucao.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -697,28 +699,35 @@ fi
 # Registra onde estao os arquivos desta execucao, para o comando /log do bot.
 printf '%s\n%s\n' "$LOG" "$RELATO_ARQUIVO" > "$REPO/data/.ultima_execucao"
 
-# Process substitution (e nao pipe para o tee) para preservar o codigo de saida
-# do python: num pipe, $? seria o do tee.
-exec > >(tee "$LOG") 2>&1
+# O corpo inteiro roda dentro de um grupo canalizado para o tee. O codigo de
+# saida vem de ${PIPESTATUS[0]} (o grupo), nao do tee, e o pipe garante que o
+# log foi totalmente escrito antes de o script terminar.
+{
+    echo "=== Robo SIAFI - $CARIMBO ==="
+    cd "$REPO" || exit 1
 
-echo "=== Robo SIAFI - $CARIMBO ==="
-cd "$REPO" || exit 1
+    echo "Atualizando o robo (git pull na main)..."
+    if ! { git checkout main && git pull origin main; }; then
+        echo "[aviso] Nao foi possivel atualizar via git pull. Rodando a versao local atual."
+    fi
 
-echo "Atualizando o robo (git pull na main)..."
-if ! { git checkout main && git pull origin main; }; then
-    echo "[aviso] Nao foi possivel atualizar via git pull. Rodando a versao local atual."
-fi
+    echo "Iniciando o robo SIAFI..."
+    # Sem esta checagem, uma venv ausente nao abortaria o script (nao ha 'set
+    # -e') e o login.py rodaria com o Python do sistema, contra o SIAFI real.
+    # shellcheck disable=SC1091
+    if ! source venv/bin/activate; then
+        echo "[erro] Nao foi possivel ativar o ambiente virtual (venv ausente ou corrompida)."
+        echo "       Rode o setup.sh novamente para recriar a venv."
+        exit 1
+    fi
 
-echo "Iniciando o robo SIAFI..."
-# shellcheck disable=SC1091
-source venv/bin/activate
-PYTHONIOENCODING=utf-8 python siafi_automacao/login.py
-codigo=$?
+    PYTHONIOENCODING=utf-8 python siafi_automacao/login.py
+} 2>&1 | tee "$LOG"
 
-# Da tempo ao tee de esvaziar o buffer antes do processo morrer.
-sleep 0.2
-exit "$codigo"
+exit "${PIPESTATUS[0]}"
 ```
+
+**Além dos 3 testes acima, a revisão acrescentou 4** (o arquivo `tests/test_rodar_sh.py` no repositório é a fonte de verdade): liberação do lock depois de a execução anterior morrer, respeito a `ROBO_LOG`/`RELATO_ARQUIVO` vindos do ambiente (o caminho pelo qual o bot invoca o script), conteúdo de `data/.ultima_execucao`, e venv ausente abortando com mensagem clara. O helper `esperar_lock()` substitui esperas de tempo fixo.
 
 - [ ] **Step 4: Tornar executável e rodar os testes**
 
