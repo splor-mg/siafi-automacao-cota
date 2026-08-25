@@ -37,6 +37,10 @@ O robô só funciona dentro da rede da SEPLAG.
 
 **Importante:** feche o arquivo Excel antes de continuar. Ele não pode estar aberto.
 
+> ⚠️ **Confira a planilha ANTES de colocá-la nesta pasta.** Depois que o robô é
+> ligado, ele vai direto para o SIAFI e aprova as cotas: **não há nenhuma
+> pergunta de confirmação no meio do caminho.** A conferência é sua, e é agora.
+
 ## Passo 3 — Ligar o robô
 
 1. Abra a pasta onde está o robô (a pasta com os arquivos que você recebeu).
@@ -48,27 +52,16 @@ O robô só funciona dentro da rede da SEPLAG.
 - Uma **janela preta** vai abrir na tela. É normal. **Não feche.**
 - Dentro dela vão aparecer várias frases em letras claras. **Não precisa fazer nada**, só esperar.
 - O robô está juntando todos os arquivos de remanejamento e montando a planilha de conferência.
+- Em seguida ele entra no SIAFI **sozinho**. Ele não pergunta nada e não espera
+  você confirmar — por isso a conferência tem que ser feita antes, no Passo 2.
 
-## Passo 5 — Conferir a planilha no Excel
-
-1. Sozinho, o **Excel vai abrir** com a planilha de conferência.
-2. **Olhe a planilha com calma.** Confira se as cotas estão certas.
-3. Quando terminar de conferir, **feche o Excel** (clique no X no canto da janela do Excel).
-
-## Passo 6 — Confirmar para o robô começar
-
-1. Volte para a **janela preta**.
-2. Vai aparecer uma pergunta pedindo para confirmar.
-3. Aperte a tecla **`s`** no teclado.
-4. Aperte a tecla **`Enter`**.
-
-## Passo 7 — Esperar o robô trabalhar
+## Passo 5 — Esperar o robô trabalhar
 
 - O robô vai entrar no SIAFI e fazer cada cota, uma por uma.
 - Na janela preta vão aparecer os resultados de cada linha.
 - **Não mexa no computador enquanto ele trabalha.** Espere até ele terminar.
 
-## Passo 8 — Pronto
+## Passo 6 — Pronto
 
 - Quando o robô terminar, a planilha já processada é guardada sozinha na pasta:
   - `Robo - Remanejamento e aprovacao de cota` → `Conferencia arquivo robo`
