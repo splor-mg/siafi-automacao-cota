@@ -118,9 +118,13 @@ def enviar_documento(caminho, nome):
     try:
         with open(caminho, encoding='utf-8', errors='replace') as f:
             conteudo = redigir(f.read(), SEGREDOS)
-        requests.post(f'{API}/sendDocument', timeout=60,
-                      data={'chat_id': CHAT_AUTORIZADO},
-                      files={'document': (nome, conteudo.encode('utf-8'))})
+        r = requests.post(f'{API}/sendDocument', timeout=60,
+                          data={'chat_id': CHAT_AUTORIZADO},
+                          files={'document': (nome, conteudo.encode('utf-8'))})
+        if r.status_code != 200:
+            print(f'[aviso] Telegram recusou o documento ({r.status_code}): {r.text}')
+            enviar(f'Não consegui enviar o log ({r.status_code}). '
+                   f'Ele está no servidor em: {caminho}')
     except Exception as e:
         print(f'[aviso] falha ao enviar documento: {e}')
         enviar(f'Não consegui enviar o log: {e}')
@@ -153,33 +157,43 @@ def executar(quem):
     log = os.path.join(REPO, 'data', 'logs', f'robo-{carimbo}.log')
     arquivo_relato = os.path.join(REPO, 'data', 'logs', f'relato-{carimbo}.jsonl')
 
-    ambiente = dict(os.environ, ROBO_LOG=log, RELATO_ARQUIVO=arquivo_relato)
+    try:
+        ambiente = dict(os.environ, ROBO_LOG=log, RELATO_ARQUIVO=arquivo_relato)
 
-    enviar(f'Robô SIAFI · iniciado\npor {quem} · '
-           f'{datetime.now().strftime("%d/%m às %H:%M")}')
+        enviar(f'Robô SIAFI · iniciado\npor {quem} · '
+               f'{datetime.now().strftime("%d/%m às %H:%M")}')
 
-    proc = subprocess.Popen(['bash', RODAR], env=ambiente,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(['bash', RODAR], env=ambiente,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
 
-    progresso_enviado = False
-    while proc.poll() is None:
-        time.sleep(2)
-        if not progresso_enviado:
-            msg = montar_progresso(ler_eventos(arquivo_relato))
-            if msg:
-                enviar(msg)
-                progresso_enviado = True
+        progresso_enviado = False
+        while proc.poll() is None:
+            time.sleep(2)
+            if not progresso_enviado:
+                msg = montar_progresso(ler_eventos(arquivo_relato))
+                if msg:
+                    enviar(msg)
+                    progresso_enviado = True
 
-    codigo = proc.returncode
-    if codigo == 10:
-        enviar('Já existe uma execução em andamento (iniciada pelo robo.bat).')
-    else:
-        enviar(montar_final(ler_eventos(arquivo_relato), codigo,
-                            time.time() - inicio))
+        codigo = proc.returncode
+        if codigo == 10:
+            enviar('Já existe uma execução em andamento (iniciada pelo robo.bat).')
+        else:
+            enviar(montar_final(ler_eventos(arquivo_relato), codigo,
+                                time.time() - inicio))
 
-    with TRAVA:
-        EXECUCAO.update(rodando=False, inicio=None, quem=None)
+    except Exception as e:
+        # Sem isto, o EXECUCAO ficaria preso em rodando=True e todo /rodar
+        # futuro seria recusado ate alguem reiniciar o servico — sem ninguem
+        # no grupo entender por que.
+        print(f'[erro] falha ao executar o robo: {e}')
+        enviar(f'Falha ao executar o robô: {e}\n'
+               f'O log desta tentativa, se houver, está em {os.path.basename(log)}.')
+
+    finally:
+        with TRAVA:
+            EXECUCAO.update(rodando=False, inicio=None, quem=None)
 
 
 def comando_rodar(quem):
@@ -264,7 +278,13 @@ def main():
             # comando nao volta na proxima consulta: um /rodar reentregue
             # dispararia o robo sozinho.
             offset = update['update_id'] + 1
-            gravar_offset(offset)
+            try:
+                gravar_offset(offset)
+            except OSError as e:
+                # Nao derruba o bot: o offset em memoria ja avancou, entao esta
+                # execucao nao reprocessa o update. Um restart pode reentregar,
+                # mas o filtro de idade limita a janela.
+                print(f'[aviso] nao foi possivel gravar o offset: {e}')
 
             if not autorizado(update, CHAT_AUTORIZADO):
                 continue

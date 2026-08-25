@@ -1,4 +1,17 @@
+import time
+
+import pytest
+
 from bot_telegram import gravar_offset, ler_eventos, ler_offset
+
+
+@pytest.fixture(autouse=True)
+def estado_limpo():
+    """EXECUCAO e global do modulo: sem isto um teste contamina o seguinte."""
+    import bot_telegram
+    bot_telegram.EXECUCAO.update(rodando=False, inicio=None, quem=None)
+    yield
+    bot_telegram.EXECUCAO.update(rodando=False, inicio=None, quem=None)
 
 
 def test_offset_ausente_devolve_none(tmp_path):
@@ -74,3 +87,39 @@ def test_caminhos_ultima_execucao_le_as_duas_linhas(monkeypatch, tmp_path):
 
     assert bot_telegram.caminhos_ultima_execucao() == (
         '/tmp/robo.log', '/tmp/relato.jsonl')
+
+
+def test_executar_libera_o_estado_mesmo_se_o_processo_nao_subir(monkeypatch):
+    """Sem o try/finally, uma falha ao iniciar o rodar.sh deixaria o estado
+    preso em rodando=True e todo /rodar futuro seria recusado, sem ninguem no
+    grupo entender por que."""
+    import bot_telegram
+    enviadas = []
+    monkeypatch.setattr(bot_telegram, 'enviar', enviadas.append)
+
+    def popen_quebrado(*args, **kwargs):
+        raise OSError('bash nao encontrado')
+
+    monkeypatch.setattr(bot_telegram.subprocess, 'Popen', popen_quebrado)
+    bot_telegram.EXECUCAO.update(rodando=True, inicio=time.time(), quem='Ana')
+
+    bot_telegram.executar('Ana')
+
+    assert bot_telegram.EXECUCAO['rodando'] is False
+    assert any('Falha ao executar' in m for m in enviadas)
+
+
+def test_comando_rodar_recusa_quando_ja_ha_execucao(monkeypatch):
+    """Duas execucoes simultaneas no SIAFI seriam um desastre."""
+    import bot_telegram
+    enviadas = []
+    threads_iniciadas = []
+    monkeypatch.setattr(bot_telegram, 'enviar', enviadas.append)
+    monkeypatch.setattr(bot_telegram.threading, 'Thread',
+                        lambda *a, **kw: threads_iniciadas.append(kw))
+
+    bot_telegram.EXECUCAO.update(rodando=True, inicio=time.time(), quem='Ana')
+    bot_telegram.comando_rodar('Bruno')
+
+    assert threads_iniciadas == []
+    assert any('Já tem execução em andamento' in m for m in enviadas)
