@@ -980,7 +980,8 @@ def eventos_de_exemplo():
         {'tipo': 'retorno', 'texto': '...', 'retorno': '0011-REGISTRO EFETUADO.'},
         {'tipo': 'resultado', 'texto': '...', 'linha': 5, 'ok': True, 'progresso': 'Ok'},
         {'tipo': 'fim', 'texto': 'Fluxo finalizado'},
-        {'tipo': 'planilha_final', 'texto': 'Conferencia arquivo robo 25.08.xlsx'},
+        {'tipo': 'planilha_final', 'texto': 'Planilha atualizada e movida ...',
+         'arquivo': 'Conferencia arquivo robo 25.08.xlsx'},
     ]
 
 
@@ -1181,7 +1182,9 @@ def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM):
     rodape = (f'{len(itens)} linhas · {efetuadas} efetuada(s) · '
               f'{puladas} pulada(s) · {com_erro} com erro')
 
-    planilha = next((e['texto'] for e in eventos
+    # So o nome do arquivo vai para o grupo; o 'texto' do evento carrega o
+    # caminho completo do OneDrive, que interessa apenas ao log.
+    planilha = next((e['arquivo'] for e in eventos
                      if e['tipo'] == 'planilha_final'), None)
     if planilha:
         rodape += f'\nPlanilha: {planilha}'
