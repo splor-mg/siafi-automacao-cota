@@ -1,5 +1,7 @@
 import time
 
+from relato import relato
+
 def anular(em, data_row):
     ## Verifica se é anulação ou aprovação e preencche 03-1 para aprovação e 04-1 para anulação
     
@@ -76,7 +78,7 @@ def anular(em, data_row):
     ## erro de saldo contabil aparece aqui.... precisa ser estudado
 
 
-    print(f"SIAFI retornou: {retorno}")
+    relato('retorno', f"SIAFI retornou: {retorno}", retorno=str(retorno))
     em.send_pf(3)  # envia F3
     em.wait_for_field()
 

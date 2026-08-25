@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 
 from fluxo_anular import anular
 from fluxo_aprovar import aprovar
+from relato import relato
 
 # ---------------------------------------------------------------------------
 # Configuracoes
@@ -426,7 +427,10 @@ if __name__ == "__main__":
         print(f"Arquivo movido para a pasta de conferencia: {caminho_destino}")
         raise SystemExit(0)
 
-    print(f"{len(pendentes)} linha(s) pendente(s) para processar: {pendentes}")
+    relato('pendentes',
+           f"{len(pendentes)} linha(s) pendente(s): "
+           f"{', '.join(str(p) for p in pendentes)}",
+           linhas=pendentes)
 
     # -----------------------------------------------------------------------
     # 3 a 6) Daqui em diante o arquivo ja saiu da pasta de origem e o SIAFI
@@ -457,7 +461,7 @@ if __name__ == "__main__":
             try:
                 em.send_enter()
                 if em.string_found(1, 13, 'Logon executado com sucesso'):
-                    print("Login realizado com sucesso!")
+                    relato('login', "Login no SIAFI realizado")
                     break
                 else:
                     print(f"Tentativa {tentativas + 1} - tela intermediária, avançando...")
@@ -524,7 +528,8 @@ if __name__ == "__main__":
 
             # Remanejamentos so sao permitidos para IAG 0.
             if data_row['iag'] == '1':
-                print(f"Linha {r}: IAG 1, pulando.")
+                relato('linha_pulada', f"Linha {r}: IAG 1, pulando.",
+                       linha=r, motivo='IAG 1')
                 ws.cell(row=r, column=col['Progresso']).value = 'IAG 1 - Não Realizado'
                 wb.save(caminho_local)
                 continue
@@ -532,21 +537,30 @@ if __name__ == "__main__":
             # Linha sem GLOBAL e sem AMARRADO nao e processavel no SIAFI:
             # registra o motivo e segue para a proxima.
             if data_row['tipo_global'] != 'x' and data_row['tipo_amarrado'] == '0':
-                print(f"Linha {r}: sem GLOBAL/AMARRADO definido, pulando.")
+                relato('linha_pulada',
+                       f"Linha {r}: sem GLOBAL/AMARRADO definido, pulando.",
+                       linha=r, motivo='sem GLOBAL/AMARRADO')
                 ws.cell(row=r, column=col['Progresso']).value = 'Linha sem GLOBAL/AMARRADO definido'
                 wb.save(caminho_local)
                 continue
 
             if data_row['valor_anulacao'] != 0:
-                print("realizando procedimento de anulação")
+                operacao = 'anulação'
             elif data_row['valor_aprovacao'] != 0:
-                print("realizando procedimento de aprovação")
+                operacao = 'aprovação'
+            else:
+                operacao = 'sem valor'
 
-            print(
-                f"Processando linha {r} | UO: {data_row['uo']}, Grupo: {data_row['grupo']}, "
-                f"Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, "
-                f"Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}"
-            )
+            relato('linha',
+                   f"realizando procedimento de {operacao}\n"
+                   f"Processando linha {r} | UO: {data_row['uo']}, "
+                   f"Grupo: {data_row['grupo']}, Acao: {data_row['acao']}, "
+                   f"Fonte: {data_row['fonte']}, "
+                   f"Procedencia: {data_row['procedencia']}, "
+                   f"Valor: {data_row['valor']}",
+                   linha=r, operacao=operacao, uo=data_row['uo'],
+                   acao=data_row['acao'], fonte=data_row['fonte'],
+                   valor=data_row['valor'])
 
             retorno = None
             if data_row['valor_anulacao'] != 0:
@@ -558,10 +572,13 @@ if __name__ == "__main__":
 
             # Grava o resultado e salva imediatamente (resiliencia: se o SIAFI
             # travar no meio, o progresso ja concluido fica registrado).
-            ws.cell(row=r, column=col['Progresso']).value = traduzir_progresso(retorno)
+            progresso = traduzir_progresso(retorno)
+            relato('resultado', f"Linha {r}: {progresso}",
+                   linha=r, ok=(progresso == 'Ok'), progresso=progresso)
+            ws.cell(row=r, column=col['Progresso']).value = progresso
             wb.save(caminho_local)
 
-        print('Fluxo finalizado')
+        relato('fim', 'Fluxo finalizado')
         # Encerra o emulador ja aqui (como antes) para a janela do x3270 fechar
         # assim que o SIAFI nao e mais necessario. O finally cobre os casos de
         # erro, e o em = None evita encerrar duas vezes.
@@ -578,6 +595,7 @@ if __name__ == "__main__":
         wb.save(caminho_local)
         mover(caminho_local, caminho_destino)
         print(f"Planilha atualizada e movida para a pasta de conferencia: {caminho_destino}")
+        relato('planilha_final', os.path.basename(caminho_destino))
 
         # -------------------------------------------------------------------
         # 6) Organiza os .xlsx soltos em Realizados -> Remanejamentos realizados.
@@ -591,9 +609,9 @@ if __name__ == "__main__":
         # ja esta na pasta local e precisa voltar para a de conferencia.
         print("")
         if isinstance(e, SystemExit):
-            print("Execucao interrompida antes de concluir todas as linhas.")
+            relato('erro', "Execução interrompida antes de concluir todas as linhas.")
         else:
-            print(f"Execucao interrompida por erro: {type(e).__name__}: {e}")
+            relato('erro', f"Execução interrompida por erro: {type(e).__name__}: {e}")
         resgatar_planilha(wb, ws, caminho_local, caminho_destino)
         raise
 
