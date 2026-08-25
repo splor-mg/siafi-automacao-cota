@@ -144,18 +144,16 @@ if (-not (Test-SetupDone)) {
     Write-Host ""
 }
 
-# Fase 3: Tudo pronto — atualizar o repositorio e executar o robo
-Write-Host "Atualizando o robo (git pull na main)..." -ForegroundColor Cyan
-wsl -d Ubuntu -- bash -c "cd ~/code/splor-mg/siafi-automacao-cota && git checkout main && git pull origin main"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[aviso] Nao foi possivel atualizar via git pull. Rodando a versao local atual." -ForegroundColor Yellow
-}
-Write-Host ""
-
+# Fase 3: Tudo pronto - executar o robo.
+# A sequencia (git pull, venv, login.py) vive no rodar.sh, compartilhada com o
+# bot do Telegram, para os dois caminhos rodarem exatamente a mesma coisa.
 Write-Host "Iniciando o robo SIAFI..." -ForegroundColor Cyan
-wsl -d Ubuntu -- bash -c "cd ~/code/splor-mg/siafi-automacao-cota && source venv/bin/activate && PYTHONIOENCODING=utf-8 python siafi_automacao/login.py"
+wsl -d Ubuntu -- bash -c "bash ~/code/splor-mg/siafi-automacao-cota/rodar.sh"
 
-if ($LASTEXITCODE -ne 0) {
+if ($LASTEXITCODE -eq 10) {
+    Write-Host ""
+    Write-Host "Ja existe uma execucao do robo em andamento. Aguarde ela terminar." -ForegroundColor Yellow
+} elseif ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "O robo encerrou com erro (codigo $LASTEXITCODE)." -ForegroundColor Red
 }
