@@ -163,7 +163,12 @@ def executar(quem):
     arquivo_relato = os.path.join(REPO, 'data', 'logs', f'relato-{carimbo}.jsonl')
 
     try:
-        ambiente = dict(os.environ, ROBO_LOG=log, RELATO_ARQUIVO=arquivo_relato)
+        # SIAFI_VISIVEL=false a forca: o x3270 abre janela grafica via WSLg,
+        # que depende da sessao grafica estar ativa. Com a tela do Windows
+        # bloqueada isso nao e garantido, e o disparo pelo Telegram e sempre
+        # desassistido. O duplo-clique no robo.bat continua respeitando o .env.
+        ambiente = dict(os.environ, ROBO_LOG=log, RELATO_ARQUIVO=arquivo_relato,
+                        SIAFI_VISIVEL='false')
 
         enviar(f'Robô SIAFI · iniciado\npor {quem} · '
                f'{datetime.now().strftime("%d/%m às %H:%M")}')

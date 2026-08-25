@@ -198,3 +198,32 @@ def test_usuario_da_allowlist_dispara(laco, monkeypatch):
     bot.processar_updates([update_bruto(900, de=1296210429)])
 
     assert disparos == ['Guilherme']
+
+
+def test_execucao_pelo_telegram_e_sempre_sem_janela(monkeypatch):
+    """O x3270 depende do WSLg da sessao grafica; com a tela bloqueada, abrir
+    janela nao e garantido. O disparo pelo Telegram e sempre desassistido,
+    entao forca o s3270 (headless) mesmo que o .env peca janela.
+    """
+    import bot_telegram
+    capturado = {}
+
+    class ProcFalso:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    def popen_falso(args, env=None, **kwargs):
+        capturado['env'] = env
+        return ProcFalso()
+
+    monkeypatch.setattr(bot_telegram, 'enviar', lambda *a, **kw: None)
+    monkeypatch.setattr(bot_telegram, 'ler_eventos', lambda *a, **kw: [])
+    monkeypatch.setattr(bot_telegram, 'montar_final', lambda *a, **kw: 'fim')
+    monkeypatch.setattr(bot_telegram.subprocess, 'Popen', popen_falso)
+    monkeypatch.setenv('SIAFI_VISIVEL', 'true')
+
+    bot_telegram.executar('Ana')
+
+    assert capturado['env']['SIAFI_VISIVEL'] == 'false'

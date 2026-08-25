@@ -138,6 +138,21 @@ A primeira instalação tem até **3 etapas**. Faça uma de cada vez, na ordem.
 Depois do `/rodar` o bot manda três mensagens no grupo: o aviso de início, o
 resumo da planilha e do login, e no fim o resultado linha a linha.
 
+> Quando o robô é acionado pelo Telegram, **nenhuma janela do SIAFI aparece na
+> tela** — ele trabalha por baixo dos panos. Isso é proposital: assim funciona
+> mesmo com o computador bloqueado. Pelo `robo.bat`, a janela continua
+> aparecendo normalmente.
+
+## Funciona com o computador bloqueado?
+
+Sim. Bloquear a tela (`Win+L`) não desconecta você: o robô continua acessível
+pelo Telegram e executa normalmente.
+
+O que **não** pode acontecer é o computador desligar ou reiniciar. Depois de um
+reinício, alguém precisa **fazer login no Windows** para o robô voltar ao ar
+(veja o passo 6 da instalação). Bloquear é diferente de reiniciar — bloquear
+não atrapalha.
+
 ## Duas execuções nunca acontecem ao mesmo tempo
 
 Se alguém der `/rodar` enquanto o robô já está em andamento — pelo Telegram ou
