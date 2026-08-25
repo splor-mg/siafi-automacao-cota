@@ -123,3 +123,78 @@ def test_comando_rodar_recusa_quando_ja_ha_execucao(monkeypatch):
 
     assert threads_iniciadas == []
     assert any('Já tem execução em andamento' in m for m in enviadas)
+
+
+# --- O laco de updates ------------------------------------------------------
+
+GRUPO_TESTE = '-1004401529622'
+
+
+def update_bruto(update_id, texto='/rodar', idade_seg=0, chat=GRUPO_TESTE,
+                 de=1296210429):
+    return {'update_id': update_id, 'message': {
+        'date': int(time.time()) - idade_seg,
+        'chat': {'id': int(chat)},
+        'from': {'id': de, 'first_name': 'Guilherme', 'is_bot': False},
+        'text': texto}}
+
+
+@pytest.fixture
+def laco(monkeypatch):
+    """Isola processar_updates: sem rede, sem disco, sem disparar o robo."""
+    import bot_telegram
+    disparos = []
+    monkeypatch.setattr(bot_telegram, 'comando_rodar', disparos.append)
+    monkeypatch.setattr(bot_telegram, 'enviar', lambda *a, **kw: None)
+    monkeypatch.setattr(bot_telegram, 'gravar_offset', lambda *a, **kw: None)
+    monkeypatch.setattr(bot_telegram, 'CHAT_AUTORIZADO', GRUPO_TESTE)
+    monkeypatch.setattr(bot_telegram, 'USUARIOS_AUTORIZADOS', [])
+    return bot_telegram, disparos
+
+
+def test_comando_antigo_nao_dispara_o_robo(laco):
+    """O cenario mais perigoso: o bot fica fora do ar, um /rodar espera na fila
+    do Telegram e e reentregue quando ele volta. O robo nao pode disparar."""
+    bot, disparos = laco
+
+    offset = bot.processar_updates([update_bruto(500, idade_seg=3600)])
+
+    assert disparos == []
+    # O offset avanca mesmo assim: senao o comando velho voltaria para sempre.
+    assert offset == 501
+
+
+def test_comando_recente_dispara_o_robo(laco):
+    """Contraprova: sem isto, o teste acima passaria com o bot quebrado."""
+    bot, disparos = laco
+
+    offset = bot.processar_updates([update_bruto(600, idade_seg=5)])
+
+    assert disparos == ['Guilherme']
+    assert offset == 601
+
+
+def test_comando_de_outro_chat_nao_dispara(laco):
+    bot, disparos = laco
+
+    bot.processar_updates([update_bruto(700, chat='-100999')])
+
+    assert disparos == []
+
+
+def test_usuario_fora_da_allowlist_nao_dispara(laco, monkeypatch):
+    bot, disparos = laco
+    monkeypatch.setattr(bot, 'USUARIOS_AUTORIZADOS', ['1296210429'])
+
+    bot.processar_updates([update_bruto(800, de=999999)])
+
+    assert disparos == []
+
+
+def test_usuario_da_allowlist_dispara(laco, monkeypatch):
+    bot, disparos = laco
+    monkeypatch.setattr(bot, 'USUARIOS_AUTORIZADOS', ['1296210429'])
+
+    bot.processar_updates([update_bruto(900, de=1296210429)])
+
+    assert disparos == ['Guilherme']

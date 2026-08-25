@@ -163,9 +163,30 @@ equipe deve passar para quem estiver dando suporte.
 
 ## Quem pode acionar
 
-Qualquer pessoa do grupo. **Entrar no grupo é o mesmo que ganhar permissão de
-aprovar e anular cota no SIAFI de produção** — não adicione ninguém sem
-combinar antes. Mensagens de fora do grupo são ignoradas.
+Mensagens de fora do grupo são sempre ignoradas. Dentro do grupo, há duas
+configurações possíveis:
+
+**Sem lista de pessoas** (`TELEGRAM_USUARIOS_AUTORIZADOS` vazio no `.env`):
+qualquer pessoa do grupo aciona. **Entrar no grupo é o mesmo que ganhar
+permissão de aprovar e anular cota no SIAFI de produção** — não adicione
+ninguém sem combinar antes.
+
+**Com lista de pessoas:** só quem está na lista pode dar `/rodar`. Os demais
+membros continuam usando `/status`, `/log` e `/ajuda` normalmente — eles
+acompanham o resultado, mas não disparam. Quem não está na lista e tenta
+`/rodar` recebe uma resposta explicando, e nada acontece.
+
+Para montar a lista, descubra o id de cada pessoa: peça para ela mandar uma
+mensagem no grupo e abra `https://api.telegram.org/bot<TOKEN>/getUpdates` —
+o número está em `"from":{"id": ...}`. Depois preencha no `.env`, separando por
+vírgula, e reinicie o serviço:
+
+```bash
+# no .env
+TELEGRAM_USUARIOS_AUTORIZADOS=1296210429,987654321
+
+sudo systemctl restart siafi-bot
+```
 
 ## Instalação (uma vez, na máquina do robô)
 

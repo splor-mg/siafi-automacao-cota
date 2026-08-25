@@ -245,3 +245,41 @@ def test_linha_sem_resultado_nenhum_admite_interrupcao():
     ]
     msg = montar_final(eventos, codigo=1, duracao_seg=30)
     assert 'sem retorno (execução interrompida)' in msg
+
+
+# --- Allowlist de quem pode disparar o robo ---------------------------------
+
+from telegram_mensagens import ler_lista_de_ids, pode_rodar
+
+MEU_ID = 1296210429
+
+
+def test_lista_vazia_deixa_qualquer_membro_do_grupo_rodar():
+    """Comportamento anterior a esta trava: sem lista, o grupo inteiro pode."""
+    assert pode_rodar(update_de(int(GRUPO)), []) is True
+
+
+def test_com_lista_so_quem_esta_nela_roda():
+    up = update_de(int(GRUPO))
+    up['message']['from']['id'] = MEU_ID
+    assert pode_rodar(up, [MEU_ID]) is True
+
+
+def test_com_lista_membro_de_fora_nao_roda():
+    up = update_de(int(GRUPO))
+    up['message']['from']['id'] = 999999
+    assert pode_rodar(up, [MEU_ID]) is False
+
+
+def test_lista_compara_id_como_texto():
+    """O .env entrega string; o Telegram entrega int."""
+    up = update_de(int(GRUPO))
+    up['message']['from']['id'] = MEU_ID
+    assert pode_rodar(up, [str(MEU_ID)]) is True
+
+
+def test_ler_lista_de_ids_tolera_espacos_e_vazio():
+    assert ler_lista_de_ids('1296210429, 42') == ['1296210429', '42']
+    assert ler_lista_de_ids('') == []
+    assert ler_lista_de_ids(None) == []
+    assert ler_lista_de_ids('  ') == []

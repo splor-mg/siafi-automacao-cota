@@ -14,8 +14,9 @@ from datetime import datetime
 import requests
 from dotenv import load_dotenv
 
-from telegram_mensagens import (autorizado, formatar_duracao, montar_final,
-                                montar_progresso, muito_antigo, redigir)
+from telegram_mensagens import (autorizado, formatar_duracao, ler_lista_de_ids,
+                                montar_final, montar_progresso, muito_antigo,
+                                pode_rodar, redigir)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARQUIVO_OFFSET = os.path.join(REPO, 'data', '.telegram_offset')
@@ -26,6 +27,10 @@ TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_AUTORIZADO = os.getenv('TELEGRAM_CHAT_ID')
 API = f'https://api.telegram.org/bot{TOKEN}'
 SEGREDOS = [os.getenv('SENHA'), os.getenv('USUARIO')]
+
+# Vazia = qualquer membro do grupo aciona o robo. Preenchida = so estes ids.
+USUARIOS_AUTORIZADOS = ler_lista_de_ids(
+    os.getenv('TELEGRAM_USUARIOS_AUTORIZADOS'))
 
 ARQUIVO_ULTIMA = os.path.join(REPO, 'data', '.ultima_execucao')
 RODAR = os.path.join(REPO, 'rodar.sh')
@@ -242,6 +247,13 @@ def tratar(update):
     texto = (msg.get('text') or '').split('@')[0].strip().lower()
 
     if texto == '/rodar':
+        if not pode_rodar(update, USUARIOS_AUTORIZADOS):
+            # Responde em vez de ignorar: quem manda isto esta legitimamente no
+            # grupo, e o silencio so viraria chamado de suporte.
+            print(f'[info] /rodar recusado: {quem} nao esta na allowlist')
+            enviar(f'{quem}, você não está na lista de quem pode acionar o '
+                   'robô. Fale com quem administra o bot.')
+            return
         print(f'[{datetime.now():%Y-%m-%d %H:%M:%S}] /rodar acionado por {quem}')
         comando_rodar(quem)
     elif texto == '/status':
@@ -250,6 +262,42 @@ def tratar(update):
         comando_log()
     elif texto in ('/ajuda', '/start', '/help'):
         enviar(AJUDA)
+
+
+def processar_updates(updates):
+    """Trata um lote de updates e devolve o offset novo (None se veio vazio).
+
+    Separada do main() para ser testavel sem rede: e aqui que mora a decisao de
+    descartar comando antigo, o unico ponto que impede o robo de disparar
+    sozinho depois de o bot ficar fora do ar.
+    """
+    offset = None
+
+    for update in updates:
+        # Confirma ANTES de tratar. Se o bot cair no meio do tratamento, o
+        # comando nao volta na proxima consulta: um /rodar reentregue
+        # dispararia o robo sozinho.
+        offset = update['update_id'] + 1
+        try:
+            gravar_offset(offset)
+        except OSError as e:
+            # Nao derruba o bot: o offset em memoria ja avancou, entao esta
+            # execucao nao reprocessa o update. Um restart pode reentregar,
+            # mas o filtro de idade limita a janela.
+            print(f'[aviso] nao foi possivel gravar o offset: {e}')
+
+        if not autorizado(update, CHAT_AUTORIZADO):
+            continue
+        if muito_antigo(update, agora=time.time()):
+            print('[info] comando antigo descartado')
+            continue
+
+        try:
+            tratar(update)
+        except Exception as e:
+            print(f'[erro] falha ao tratar update: {e}')
+
+    return offset
 
 
 def main():
@@ -273,29 +321,9 @@ def main():
             espera = min(espera * 2, 60)
             continue
 
-        for update in updates:
-            # Confirma ANTES de tratar. Se o bot cair no meio do tratamento, o
-            # comando nao volta na proxima consulta: um /rodar reentregue
-            # dispararia o robo sozinho.
-            offset = update['update_id'] + 1
-            try:
-                gravar_offset(offset)
-            except OSError as e:
-                # Nao derruba o bot: o offset em memoria ja avancou, entao esta
-                # execucao nao reprocessa o update. Um restart pode reentregar,
-                # mas o filtro de idade limita a janela.
-                print(f'[aviso] nao foi possivel gravar o offset: {e}')
-
-            if not autorizado(update, CHAT_AUTORIZADO):
-                continue
-            if muito_antigo(update, agora=time.time()):
-                print('[info] comando antigo descartado')
-                continue
-
-            try:
-                tratar(update)
-            except Exception as e:
-                print(f'[erro] falha ao tratar update: {e}')
+        novo_offset = processar_updates(updates)
+        if novo_offset is not None:
+            offset = novo_offset
 
 
 if __name__ == '__main__':

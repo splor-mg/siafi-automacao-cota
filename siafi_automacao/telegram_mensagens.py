@@ -28,6 +28,29 @@ def autorizado(update, chat_autorizado):
     return bool(str(msg.get('chat', {}).get('id')) == str(chat_autorizado))
 
 
+def ler_lista_de_ids(valor):
+    """Converte 'ID_A, ID_B' vindo do .env numa lista, tolerando espacos."""
+    if not valor:
+        return []
+    return [pedaco.strip() for pedaco in valor.split(',') if pedaco.strip()]
+
+
+def pode_rodar(update, usuarios_autorizados):
+    """Quem, dentro do grupo, pode disparar o robo.
+
+    Lista vazia mantem o comportamento anterior a esta trava: qualquer membro
+    do grupo aciona. Com lista preenchida, so os ids nela — util quando o
+    grupo tem gente que acompanha o resultado mas nao deve aprovar cota.
+
+    Compara como texto porque o .env entrega string e o Telegram entrega int.
+    """
+    if not usuarios_autorizados:
+        return True
+    msg = update.get('message') or {}
+    permitidos = {str(u) for u in usuarios_autorizados}
+    return str(msg.get('from', {}).get('id')) in permitidos
+
+
 def muito_antigo(update, agora, idade_maxima=IDADE_MAXIMA_UPDATE):
     """Comando velho demais para ser obedecido.
 
