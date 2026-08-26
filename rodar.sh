@@ -32,6 +32,14 @@ fi
 # Registra onde estao os arquivos desta execucao, para o comando /log do bot.
 printf '%s\n%s\n' "$LOG" "$RELATO_ARQUIVO" > "$REPO/data/.ultima_execucao"
 
+# Apaga logs antigos. Roda aqui, e nao num timer do systemd, para valer tanto
+# para o bot quanto para o duplo-clique no robo.bat sem depender de mais
+# nenhuma peca. Os arquivos desta execucao sao de hoje, entao nunca entram no
+# alcance do -mtime.
+find "$REPO/data/logs" -maxdepth 1 -type f \
+    \( -name 'robo-*.log' -o -name 'relato-*.jsonl' \) \
+    -mtime +"${LOG_RETENCAO_DIAS:-30}" -delete 2>/dev/null
+
 # O corpo inteiro roda dentro de um grupo canalizado para o tee. O codigo de
 # saida vem de ${PIPESTATUS[0]} (o grupo), nao do tee, e o pipe garante que o
 # log foi totalmente escrito antes de o script terminar.

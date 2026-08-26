@@ -171,3 +171,51 @@ def test_venv_ausente_aborta_com_mensagem_clara(tmp_path):
 
     assert r.returncode == 1
     assert 'ambiente virtual' in r.stdout
+
+
+def test_apaga_logs_antigos_e_preserva_os_recentes(tmp_path):
+    """Sem limpeza os logs se acumulam para sempre. A janela precisa ser larga
+    o bastante para investigar um problema reportado com atraso."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    montar_repo_falso(repo)
+
+    logs = repo / 'data' / 'logs'
+    logs.mkdir(parents=True, exist_ok=True)
+    antigo = logs / 'robo-20250101-000000.log'
+    antigo_relato = logs / 'relato-20250101-000000.jsonl'
+    recente = logs / 'robo-20260824-000000.log'
+    for f in (antigo, antigo_relato, recente):
+        f.write_text('x')
+    subprocess.run(['touch', '-d', '40 days ago', str(antigo)], check=True)
+    subprocess.run(['touch', '-d', '40 days ago', str(antigo_relato)], check=True)
+    subprocess.run(['touch', '-d', '1 day ago', str(recente)], check=True)
+
+    r = subprocess.run(['bash', str(repo / 'rodar.sh')], capture_output=True,
+                       text=True, timeout=60)
+
+    assert r.returncode == 0
+    assert not antigo.exists()
+    assert not antigo_relato.exists()
+    assert recente.exists()
+    # O log da execucao atual nunca pode ser apagado por ela mesma.
+    assert list(logs.glob('robo-*.log')) != [recente]
+
+
+def test_retencao_de_logs_e_configuravel(tmp_path):
+    """LOG_RETENCAO_DIAS encurta ou alarga a janela sem mexer no codigo."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    montar_repo_falso(repo)
+
+    logs = repo / 'data' / 'logs'
+    logs.mkdir(parents=True, exist_ok=True)
+    alvo = logs / 'robo-20260820-000000.log'
+    alvo.write_text('x')
+    subprocess.run(['touch', '-d', '5 days ago', str(alvo)], check=True)
+
+    ambiente = dict(os.environ, LOG_RETENCAO_DIAS='2')
+    subprocess.run(['bash', str(repo / 'rodar.sh')], env=ambiente,
+                   capture_output=True, text=True, timeout=60)
+
+    assert not alvo.exists()

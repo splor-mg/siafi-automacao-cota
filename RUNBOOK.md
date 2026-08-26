@@ -176,6 +176,11 @@ Cada execução grava um arquivo em `data/logs/`, dentro da pasta do robô no
 Ubuntu. O `/log` envia o da execução mais recente — é essa informação que a
 equipe deve passar para quem estiver dando suporte.
 
+Os logs se apagam sozinhos depois de **30 dias**. A limpeza acontece no começo
+de cada execução, então não há nada a fazer manualmente. Para mudar o prazo,
+ajuste `LOG_RETENCAO_DIAS` no `.env` (não precisa reiniciar o serviço — quem lê
+essa variável é o `rodar.sh`, a cada execução).
+
 ## Quem pode acionar
 
 Mensagens de fora do grupo são sempre ignoradas. Dentro do grupo, há duas
