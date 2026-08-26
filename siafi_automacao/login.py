@@ -396,7 +396,15 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     script_consolida = os.path.join(os.path.dirname(__file__), 'consolida.py')
     print("Executando consolida.py...")
-    subprocess.run([sys.executable, script_consolida], check=True)
+    consolida = subprocess.run([sys.executable, script_consolida])
+    if consolida.returncode != 0:
+        # Sem check=True: o CalledProcessError subia como traceback cru, e o
+        # grupo recebia 'FALHOU (codigo 1)' sem motivo nenhum. O consolida.py
+        # ja emitiu o relato especifico; aqui so encerramos limpo, dizendo onde
+        # esta o detalhe.
+        relato('erro', 'A consolidação das planilhas não passou. Nenhuma linha '
+                       'foi processada. Use /log para o relatório completo.')
+        raise SystemExit(consolida.returncode)
 
     # -----------------------------------------------------------------------
     # 1) Move o arquivo da pasta de origem para a pasta local e abre a copia

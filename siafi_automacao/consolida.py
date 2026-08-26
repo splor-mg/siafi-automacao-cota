@@ -429,6 +429,35 @@ def imprimir_relatorio_erros(erros: list):
     print('\n' + '=' * 78)
 
 
+def resumir_erros(erros: list, limite: int = 10) -> str:
+    """Resumo curto dos problemas de validacao, para a mensagem do Telegram.
+
+    O relatorio completo continua indo para o console e para o /log. Aqui vai
+    so o essencial para a pessoa saber qual planilha corrigir e o que nela
+    esta errado, sem precisar abrir o log no servidor.
+    """
+    por_arquivo = {}
+    for arq, linha, coluna, _valor, msg in erros:
+        por_arquivo.setdefault(arq, []).append((linha, coluna, msg))
+
+    partes = [f'Validacao reprovada: {len(erros)} problema(s). '
+              'Nada foi consolidado.']
+    mostrados = 0
+
+    for arq in sorted(por_arquivo):
+        partes.append(f'\n{arq}:')
+        for linha, coluna, msg in por_arquivo[arq]:
+            if mostrados >= limite:
+                partes.append(
+                    f'  ... e mais {len(erros) - mostrados} problema(s), veja /log')
+                return '\n'.join(partes)
+            local = f'linha {linha}' if isinstance(linha, int) else 'arquivo'
+            partes.append(f'  [{local}] {coluna}: {msg}')
+            mostrados += 1
+
+    return '\n'.join(partes)
+
+
 # ===========================================================================
 def ler_arquivo_origem(caminho: str) -> pd.DataFrame:
     """Lê a 1ª aba, descarta linhas-lixo e alinha as colunas ao layout do conferência."""
@@ -533,6 +562,9 @@ def main():
     print(f'Validando {len(arquivos_origem)} arquivo(s) de remanejamento...')
     erros = validar_todos(arquivos_origem)
     if erros:
+        # O relato vem antes do relatorio detalhado: no console lê-se como
+        # manchete e depois o detalhe; no Telegram chega so a manchete.
+        relato('erro', resumir_erros(erros))
         imprimir_relatorio_erros(erros)
         raise SystemExit(1)
     print('Validação OK: todas as planilhas passaram nas regras.')
@@ -548,8 +580,9 @@ def main():
             else:
                 print(f'[aviso] Sem linhas válidas: {os.path.basename(caminho)}')
         except Exception as e:
-            print(f'[ERRO] Falha ao ler {os.path.basename(caminho)}: {e}')
-            print('Abortando para não consolidar dados parciais.')
+            relato('erro',
+                   f'Falha ao ler {os.path.basename(caminho)}: {e}\n'
+                   'Abortado para nao consolidar dados parciais.')
             raise SystemExit(1)
 
     if not blocos:
