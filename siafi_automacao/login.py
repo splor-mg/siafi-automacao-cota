@@ -31,6 +31,11 @@ siafi_visivel  = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
 
 month = datetime.today().strftime("%m")
 
+# Marca da linha cuja operacao pode ter chegado ao SIAFI sem o robo ter lido o
+# retorno. Precisa ser texto nao vazio: e isso que a tira da fila de pendentes
+# e obriga uma conferencia humana antes de reprocessar.
+PROGRESSO_INCERTO = 'INTERROMPIDA - VERIFICAR NO SIAFI'
+
 # Pasta de ORIGEM (OneDrive sincronizado) de onde o arquivo a processar e
 # MOVIDO para a pasta local. O caminho do Windows  C:/Users/...  e acessado
 # a partir do WSL via /mnt/c/...
@@ -459,6 +464,8 @@ if __name__ == "__main__":
     #            WSL (de onde nenhuma execucao seguinte conseguia recupera-la).
     # -----------------------------------------------------------------------
     em = None
+    # Linha cuja operacao pode ter chegado ao SIAFI sem o retorno ter sido lido.
+    linha_em_curso = None
     try:
         # -------------------------------------------------------------------
         # 3) Login no SIAFI
@@ -583,6 +590,10 @@ if __name__ == "__main__":
                    acao=data_row['acao'], fonte=data_row['fonte'],
                    valor=data_row['valor'])
 
+            # A partir daqui o SIAFI pode ser tocado. Se algo falhar antes de
+            # o Progresso ser gravado, esta linha fica em estado incerto.
+            linha_em_curso = r
+
             retorno = None
             if data_row['valor_anulacao'] != 0:
                 retorno = anular(em, data_row)
@@ -598,6 +609,7 @@ if __name__ == "__main__":
                    linha=r, ok=(progresso == 'Ok'), progresso=progresso)
             ws.cell(row=r, column=col['Progresso']).value = progresso
             wb.save(caminho_local)
+            linha_em_curso = None
 
         relato('fim', 'Fluxo finalizado')
         # Encerra o emulador ja aqui (como antes) para a janela do x3270 fechar
@@ -634,6 +646,19 @@ if __name__ == "__main__":
             relato('erro', "Execução interrompida antes de concluir todas as linhas.")
         else:
             relato('erro', f"Execução interrompida por erro: {type(e).__name__}: {e}")
+
+        # A linha que estava em curso pode ter chegado ao SIAFI sem o retorno
+        # ter sido lido. Deixar o Progresso vazio faria a proxima execucao
+        # reprocessa-la as cegas — e duplicar a operacao, se ela tiver entrado.
+        # Marcada, ela sai da fila e alguem precisa conferir antes de liberar.
+        if linha_em_curso is not None:
+            ws.cell(row=linha_em_curso, column=col['Progresso']).value = PROGRESSO_INCERTO
+            relato('erro',
+                   f"ATENÇÃO: a linha {linha_em_curso} parou no meio. Não dá para "
+                   f"saber se a operação entrou no SIAFI. Confira lá antes de "
+                   f"rodar de novo — ela NÃO será reprocessada automaticamente. "
+                   f"Para liberá-la, apague a coluna Progresso dessa linha.")
+
         resgatar_planilha(wb, ws, caminho_local, caminho_destino)
         raise
 

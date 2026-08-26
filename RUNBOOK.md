@@ -282,6 +282,22 @@ Quando o robô termina, ele escreve o resultado de cada linha na coluna **Progre
 | `Grupo de despesa inexistente` | O grupo de despesa está errado |
 | `Elemento/item não marcado para a UO beneficiada` | Faltou uma marcação no elemento/item |
 | `Linha sem GLOBAL/AMARRADO definido` | A linha da planilha está sem o tipo |
+| `INTERROMPIDA - VERIFICAR NO SIAFI` | **Exige ação sua.** Veja abaixo. |
+
+## Se aparecer `INTERROMPIDA - VERIFICAR NO SIAFI`
+
+O robô parou no meio dessa linha e **não sabe se a operação entrou no SIAFI**.
+
+Nesse caso ele *não* deixa a linha em branco de propósito: linha em branco seria
+reprocessada na próxima execução, e se a operação já tivesse entrado, ela seria
+feita **duas vezes**.
+
+O que fazer:
+
+1. Consulte no SIAFI se aquela cota foi mesmo aprovada ou anulada.
+2. **Se entrou:** deixe como está (ou escreva `Ok`). Não rode de novo essa linha.
+3. **Se não entrou:** apague o conteúdo da coluna `Progresso` dessa linha. Ela
+   volta para a fila e o robô a processa na próxima execução.
 
 > As linhas que já tinham a coluna Progresso preenchida são **puladas**. O robô só faz as que ainda estão em branco.
 

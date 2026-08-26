@@ -1,5 +1,6 @@
 import time
 
+from emulador import esperar_teclado
 from relato import relato
 
 def aprovar(em, data_row):
@@ -45,6 +46,10 @@ def aprovar(em, data_row):
                 break
 
         #digitar as informações das ações e valores...
+        # O SIAFI as vezes volta a travar o teclado depois do
+        # wait_for_field() acima. Sem esta espera, o fill abaixo
+        # morre com 'Keyboard locked' no meio da linha.
+        esperar_teclado(em)
         em.fill_field(16, 16, data_row['acao'], 4) # ação
         em.fill_field(16, 22, '0001', 4)
         em.fill_field(16, 36, str(data_row['valor']), 15) # valor
