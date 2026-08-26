@@ -109,9 +109,13 @@ def agrupar_linhas(eventos):
             itens.append({'linha': ev['linha'], 'pulada': True,
                           'motivo': ev['motivo'], 'ok': True, 'retorno': None})
         elif tipo == 'linha':
+            # .get em grupo/ipu: eventos gravados por versoes anteriores do
+            # robo nao os tinham, e um KeyError aqui derrubaria a mensagem
+            # final inteira.
             itens.append({'linha': ev['linha'], 'pulada': False,
                           'operacao': ev['operacao'], 'uo': ev['uo'],
-                          'acao': ev['acao'], 'fonte': ev['fonte'],
+                          'acao': ev['acao'], 'grupo': ev.get('grupo'),
+                          'fonte': ev['fonte'], 'ipu': ev.get('ipu'),
                           'valor': ev['valor'], 'retorno': None, 'ok': False})
         elif tipo == 'retorno' and itens and not itens[-1]['pulada']:
             itens[-1]['retorno'] = ev['retorno']
@@ -127,9 +131,15 @@ def _texto_item(item):
     if item['pulada']:
         return f"Linha {item['linha']} · pulada ({item['motivo']})"
 
-    cabecalho = (f"Linha {item['linha']} · {item['operacao']} · "
-                 f"UO {item['uo']} · Ação {item['acao']} · "
-                 f"Fonte {item['fonte']} · {formatar_valor(item['valor'])}")
+    partes = [f"Linha {item['linha']}", item['operacao'],
+              f"UO {item['uo']}", f"Ação {item['acao']}"]
+    if item.get('grupo') is not None:
+        partes.append(f"Grupo {item['grupo']}")
+    partes.append(f"Fonte {item['fonte']}")
+    if item.get('ipu') is not None:
+        partes.append(f"IPU {item['ipu']}")
+    partes.append(formatar_valor(item['valor']))
+    cabecalho = ' · '.join(partes)
 
     if item['retorno']:
         detalhe = item['retorno']

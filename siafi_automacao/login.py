@@ -597,7 +597,8 @@ if __name__ == "__main__":
                    f"Procedencia: {data_row['procedencia']}, "
                    f"Valor: {data_row['valor']}",
                    linha=r, operacao=operacao, uo=data_row['uo'],
-                   acao=data_row['acao'], fonte=data_row['fonte'],
+                   acao=data_row['acao'], grupo=data_row['grupo'],
+                   fonte=data_row['fonte'], ipu=data_row['procedencia'],
                    valor=data_row['valor'])
 
             # A partir daqui o SIAFI pode ser tocado. Se algo falhar antes de

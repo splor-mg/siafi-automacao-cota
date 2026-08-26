@@ -327,3 +327,30 @@ def test_final_mostra_aviso_de_nada_a_fazer():
 
     assert 'concluído' in msg
     assert 'Nenhuma planilha para processar' in msg
+
+
+def test_final_mostra_grupo_e_ipu_quando_o_robo_os_envia():
+    eventos = eventos_de_exemplo()[:3] + [
+        {'tipo': 'linha', 'texto': '...', 'linha': 28, 'operacao': 'anulação',
+         'uo': '2311', 'acao': '4411', 'grupo': '3', 'fonte': '10',
+         'ipu': '1', 'valor': 10000000},
+        {'tipo': 'retorno', 'texto': '...', 'retorno': '0011-REGISTRO EFETUADO.'},
+        {'tipo': 'resultado', 'texto': '...', 'linha': 28, 'ok': True,
+         'progresso': 'Ok'},
+    ]
+
+    msg = montar_final(eventos, codigo=0, duracao_seg=30)
+
+    assert ('Linha 28 · anulação · UO 2311 · Ação 4411 · Grupo 3 · '
+            'Fonte 10 · IPU 1 · R$ 100.000,00') in msg
+
+
+def test_final_omite_grupo_e_ipu_de_relato_antigo():
+    """Relato gravado por versao anterior do robo nao tem esses campos. A
+    mensagem tem que sair mesmo assim, em vez de morrer com KeyError."""
+    msg = montar_final(eventos_de_exemplo(), codigo=0, duracao_seg=30)
+
+    assert ('Linha 4 · aprovação · UO 1261 · Ação 4511 · Fonte 10 · '
+            'R$ 74.000,00') in msg
+    assert 'Grupo' not in msg
+    assert 'IPU' not in msg
