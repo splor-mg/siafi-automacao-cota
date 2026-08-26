@@ -25,6 +25,7 @@ CONTRATO = {
     'fim':            set(),
     'planilha_final': {'arquivo'},
     'erro':           set(),
+    'aviso':          set(),
 }
 
 

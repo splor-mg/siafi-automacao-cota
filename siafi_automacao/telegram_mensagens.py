@@ -190,6 +190,11 @@ def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM):
     for erro in (e['texto'] for e in eventos if e['tipo'] == 'erro'):
         rodape += f'\n{escape(erro)}'
 
+    # 'aviso' e o caso benigno (nada a processar): explica o resultado sem o
+    # tom de falha, porque a execucao terminou bem.
+    for aviso in (e['texto'] for e in eventos if e['tipo'] == 'aviso'):
+        rodape += f'\n{escape(aviso)}'
+
     if not itens:
         # Um <pre> vazio vira um buraco branco no meio da mensagem.
         return f'{cabecalho}\n\nNenhuma linha chegou a ser processada.\n\n{rodape}'

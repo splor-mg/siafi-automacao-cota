@@ -417,7 +417,16 @@ if __name__ == "__main__":
     os.makedirs(PASTA_LOCAL, exist_ok=True)
     os.makedirs(PASTA_DESTINO, exist_ok=True)
 
-    arquivo_origem  = localizar_arquivo(PASTA_ORIGEM)
+    # Pasta vazia nao e falha, e o caso comum de acionar sem ter posto
+    # planilha nenhuma. Sem este tratamento o FileNotFoundError subia como
+    # traceback e o grupo recebia 'FALHOU (codigo 1)' sem explicacao alguma.
+    try:
+        arquivo_origem = localizar_arquivo(PASTA_ORIGEM)
+    except FileNotFoundError:
+        relato('aviso', 'Nenhuma planilha para processar. Coloque o arquivo na '
+                        'pasta Remanejamentos e acione de novo.')
+        raise SystemExit(0)
+
     nome_arquivo    = os.path.basename(arquivo_origem)
     caminho_local   = os.path.join(PASTA_LOCAL, nome_arquivo)
     caminho_destino = os.path.join(PASTA_DESTINO, nome_arquivo)
@@ -443,7 +452,8 @@ if __name__ == "__main__":
     ]
 
     if not pendentes:
-        print("Nenhuma linha pendente para processar.")
+        relato('aviso', 'Nenhuma linha pendente: todas ja tem Progresso '
+                        'preenchido na planilha.')
         mover(caminho_local, caminho_destino)
         print(f"Arquivo movido para a pasta de conferencia: {caminho_destino}")
         raise SystemExit(0)

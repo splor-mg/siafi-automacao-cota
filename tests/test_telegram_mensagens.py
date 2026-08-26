@@ -314,3 +314,16 @@ def test_final_mostra_todos_os_motivos_de_erro():
 
     assert 'Verifique a VPN' in msg
     assert 'interrompida antes de concluir' in msg
+
+
+def test_final_mostra_aviso_de_nada_a_fazer():
+    """Pasta vazia nao e falha: o grupo precisa ler 'nao havia o que fazer',
+    e nao um 'FALHOU' sem motivo."""
+    eventos = [{'tipo': 'aviso',
+                'texto': 'Nenhuma planilha para processar. Coloque o arquivo '
+                         'em Remanejamentos e rode de novo.'}]
+
+    msg = montar_final(eventos, codigo=0, duracao_seg=4)
+
+    assert 'concluído' in msg
+    assert 'Nenhuma planilha para processar' in msg
