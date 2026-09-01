@@ -37,7 +37,8 @@ REPO_CREDITO = os.path.expanduser('~/code/splor-mg/siafi-automacao-credito')
 FONTES_CREDITO = ('login.py', 'consolida.py', 'resultado.py')
 
 CONTRATO_CREDITO = {
-    'planilha':  set(),
+    'planilha':       set(),
+    'planilha_final': {'arquivo'},
     'login':     set(),
     'pendentes': set(),
     'documento': {'linha', 'uo', 'nr_doc', 'ok'},

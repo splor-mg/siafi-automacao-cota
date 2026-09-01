@@ -192,11 +192,8 @@ def executar(quem, chave):
         # que depende da sessao grafica estar ativa. Com a tela do Windows
         # bloqueada isso nao e garantido, e o disparo pelo Telegram e sempre
         # desassistido. O duplo-clique no robo.bat continua respeitando o .env.
-        # ROBO_DESASSISTIDO: o robo de credito para no meio pedindo um 's' no
-        # teclado. Acionado daqui nao ha ninguem para digitar, e como servico
-        # do systemd o input() estouraria com EOFError.
         ambiente = dict(os.environ, ROBO_LOG=log, RELATO_ARQUIVO=arquivo_relato,
-                        SIAFI_VISIVEL='false', ROBO_DESASSISTIDO='1')
+                        SIAFI_VISIVEL='false')
 
         enviar(f'Robô SIAFI · {projeto["nome"]} · iniciado\npor {quem} · '
                f'{datetime.now().strftime("%d/%m às %H:%M")}')

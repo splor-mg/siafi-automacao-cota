@@ -151,16 +151,21 @@ execução em andamento e não dispara nada. Vale para os dois `.bat` também.
 
 ## Atenção especial ao `/credito`
 
-Quando você roda o crédito pelo **`robo_credito.bat`**, ele abre o `copia.xlsm`
-no Excel e espera você revisar e digitar `s`.
+> ⚠️ **O robô de crédito não pergunta mais nada.** Antes ele abria o
+> `copia.xlsm` no Excel e esperava você digitar `s`. Isso acabou — vale tanto
+> para o Telegram quanto para o duplo-clique no `robo_credito.bat`.
+>
+> **Confira as planilhas ANTES de colocá-las na pasta de origem.** Depois de
+> acionado, o robô vai até o fim sozinho.
 
-Pelo **Telegram esse passo não acontece** — não há ninguém na frente da máquina
-para revisar. A conferência precisa ser feita **antes** de pôr as planilhas na
-pasta de origem.
+Aquele passo nunca foi de fato uma conferência: ele existia porque a aba `ROBO`
+é montada por fórmulas que só o Excel calcula, e alguém precisava abrir o
+arquivo para elas rodarem. Hoje o robô faz o Excel recalcular sozinho e confere
+se a aba veio preenchida — se vier vazia, ele para antes de tocar no SIAFI.
 
-A análise de saldo automática continua valendo nos dois caminhos: se ela
-reprovar, o robô para e **nenhuma solicitação é enviada ao SIAFI**. Nesse caso
-a mensagem do grupo diz *"interrompido"*, e não *"FALHOU"*.
+A análise de saldo automática continua valendo: se ela reprovar, o robô para e
+**nenhuma solicitação é enviada ao SIAFI**. Nesse caso a mensagem do grupo diz
+*"interrompido"*, e não *"FALHOU"*.
 
 > Quando o robô é acionado pelo Telegram, **nenhuma janela do SIAFI aparece na
 > tela** — ele trabalha por baixo dos panos. Isso é proposital: assim funciona
