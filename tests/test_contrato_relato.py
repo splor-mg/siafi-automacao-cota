@@ -34,7 +34,8 @@ CONTRATO = {
 # O robo de credito vive em outro repositorio e reporta por documento, nao por
 # linha de planilha. O bot le os dois com o mesmo montar_final.
 REPO_CREDITO = os.path.expanduser('~/code/splor-mg/siafi-automacao-credito')
-FONTES_CREDITO = ('login.py', 'consolida.py', 'resultado.py')
+FONTES_CREDITO = ('login.py', 'consolida.py', 'resultado.py',
+                  'analise_saldo.py')
 
 CONTRATO_CREDITO = {
     'planilha':       set(),
