@@ -54,6 +54,39 @@ AJUDA = (
     'Os dois robôs usam o mesmo usuário do SIAFI, então nunca rodam juntos.'
 )
 
+def _chaves_do_env(caminho):
+    """Nomes das variaveis definidas no .env deste repositorio."""
+    chaves = set()
+    try:
+        with open(caminho, encoding='utf-8') as f:
+            for linha in f:
+                linha = linha.strip()
+                if linha and not linha.startswith('#') and '=' in linha:
+                    chaves.add(linha.split('=', 1)[0].strip())
+    except OSError:
+        pass
+    return chaves
+
+
+CHAVES_DO_ENV = _chaves_do_env(os.path.join(REPO, '.env'))
+
+
+def ambiente_do_projeto(**extra):
+    """Ambiente do subprocesso, limpo das variaveis do .env do bot.
+
+    O load_dotenv acima despejou o .env do repo de cota dentro deste processo.
+    Repassar isso ao robo de credito fazia ele herdar o ONEDRIVE_BASE de cota e
+    procurar as planilhas na pasta errada — porque o python-dotenv NAO
+    sobrescreve variavel ja existente no ambiente, entao o .env dele perdia.
+
+    Removendo essas chaves, cada robo carrega a propria configuracao. De
+    quebra, o token do Telegram nao viaja para dentro do robo.
+    """
+    ambiente = {k: v for k, v in os.environ.items() if k not in CHAVES_DO_ENV}
+    ambiente.update(extra)
+    return ambiente
+
+
 EXECUCAO = {'rodando': False, 'inicio': None, 'quem': None, 'projeto': None}
 TRAVA = threading.Lock()
 
@@ -192,8 +225,9 @@ def executar(quem, chave):
         # que depende da sessao grafica estar ativa. Com a tela do Windows
         # bloqueada isso nao e garantido, e o disparo pelo Telegram e sempre
         # desassistido. O duplo-clique no robo.bat continua respeitando o .env.
-        ambiente = dict(os.environ, ROBO_LOG=log, RELATO_ARQUIVO=arquivo_relato,
-                        SIAFI_VISIVEL='false')
+        ambiente = ambiente_do_projeto(ROBO_LOG=log,
+                                       RELATO_ARQUIVO=arquivo_relato,
+                                       SIAFI_VISIVEL='false')
 
         enviar(f'Robô SIAFI · {projeto["nome"]} · iniciado\npor {quem} · '
                f'{datetime.now().strftime("%d/%m às %H:%M")}')

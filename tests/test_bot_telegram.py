@@ -295,3 +295,22 @@ def test_execucao_pelo_telegram_e_sempre_sem_janela(monkeypatch):
     bot_telegram.executar('Ana', 'cota')
 
     assert capturado['env']['SIAFI_VISIVEL'] == 'false'
+
+
+def test_ambiente_do_projeto_nao_vaza_o_env_do_bot(monkeypatch):
+    """O bot carrega o .env do repo de cota no proprio processo.
+
+    Passar isso adiante fazia o robo de credito herdar o ONEDRIVE_BASE de cota
+    e ir procurar as planilhas na pasta errada: o python-dotenv NAO sobrescreve
+    variavel que ja existe no ambiente, entao o .env do credito perdia.
+    """
+    import bot_telegram
+    monkeypatch.setenv('ONEDRIVE_BASE', '/pasta/da/cota')
+    monkeypatch.setenv('COISA_DO_SISTEMA', 'preservado')
+    monkeypatch.setattr(bot_telegram, 'CHAVES_DO_ENV', {'ONEDRIVE_BASE'})
+
+    ambiente = bot_telegram.ambiente_do_projeto(ROBO_LOG='/tmp/x.log')
+
+    assert 'ONEDRIVE_BASE' not in ambiente
+    assert ambiente['COISA_DO_SISTEMA'] == 'preservado'
+    assert ambiente['ROBO_LOG'] == '/tmp/x.log'
