@@ -39,6 +39,7 @@ FONTES_CREDITO = ('login.py', 'consolida.py', 'resultado.py')
 CONTRATO_CREDITO = {
     'planilha':  set(),
     'login':     set(),
+    'pendentes': set(),
     'documento': {'linha', 'uo', 'nr_doc', 'ok'},
     'fim':       set(),
     'erro':      set(),
