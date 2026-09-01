@@ -29,6 +29,16 @@ def montar_repo_falso(destino):
     subprocess.run(['git', 'commit', '-q', '-m', 'inicial'], cwd=destino, check=True)
 
 
+def env_teste(repo, **extra):
+    """Lock isolado por teste.
+
+    O padrao do rodar.sh e um lock compartilhado no HOME, para o robo de cota e
+    o de credito nunca rodarem juntos (mesmo usuario do SIAFI). Nos testes isso
+    faria um teste bloquear o outro — e pior, bloquear uma execucao real.
+    """
+    return dict(os.environ, SIAFI_LOCK=str(repo / 'data' / '.robo.lock'), **extra)
+
+
 def esperar_lock(repo, timeout=20):
     """Espera a execucao pegar o lock, em vez de dormir um tempo fixo.
 
@@ -49,11 +59,11 @@ def test_segunda_execucao_simultanea_sai_com_codigo_10(tmp_path):
     repo.mkdir()
     montar_repo_falso(repo)
 
-    primeira = subprocess.Popen(['bash', str(repo / 'rodar.sh')],
+    primeira = subprocess.Popen(['bash', str(repo / 'rodar.sh')], env=env_teste(repo),
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     esperar_lock(repo)  # tempo de a primeira pegar o lock e entrar no sleep
 
-    segunda = subprocess.run(['bash', str(repo / 'rodar.sh')],
+    segunda = subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo),
                              capture_output=True, text=True)
     assert segunda.returncode == 10
 
@@ -65,7 +75,7 @@ def test_execucao_isolada_termina_com_sucesso_e_gera_log(tmp_path):
     repo.mkdir()
     montar_repo_falso(repo)
 
-    r = subprocess.run(['bash', str(repo / 'rodar.sh')], capture_output=True, text=True)
+    r = subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo), capture_output=True, text=True)
     assert r.returncode == 0
 
     logs = list((repo / 'data' / 'logs').glob('robo-*.log'))
@@ -82,7 +92,7 @@ def test_propaga_codigo_de_erro_do_login(tmp_path):
     montar_repo_falso(repo)
     (repo / 'siafi_automacao' / 'login.py').write_text('raise SystemExit(3)\n')
 
-    r = subprocess.run(['bash', str(repo / 'rodar.sh')], capture_output=True, text=True)
+    r = subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo), capture_output=True, text=True)
     assert r.returncode == 3
 
 
@@ -105,18 +115,18 @@ def test_lock_e_liberado_quando_a_execucao_anterior_morre(tmp_path):
     repo.mkdir()
     montar_repo_falso(repo)
 
-    primeira = subprocess.Popen(['bash', str(repo / 'rodar.sh')],
+    primeira = subprocess.Popen(['bash', str(repo / 'rodar.sh')], env=env_teste(repo),
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     esperar_lock(repo)
     primeira.kill()
     primeira.wait(timeout=10)
 
     limite = time.time() + 20
-    segunda = subprocess.run(['bash', str(repo / 'rodar.sh')],
+    segunda = subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo),
                              capture_output=True, text=True, timeout=60)
     while segunda.returncode == 10 and time.time() < limite:
         time.sleep(0.2)
-        segunda = subprocess.run(['bash', str(repo / 'rodar.sh')],
+        segunda = subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo),
                                  capture_output=True, text=True, timeout=60)
     assert segunda.returncode == 0
 
@@ -130,7 +140,7 @@ def test_respeita_caminhos_vindos_do_ambiente(tmp_path):
 
     log = tmp_path / 'meu.log'
     relato = tmp_path / 'meu.jsonl'
-    ambiente = dict(os.environ, ROBO_LOG=str(log), RELATO_ARQUIVO=str(relato))
+    ambiente = env_teste(repo, ROBO_LOG=str(log), RELATO_ARQUIVO=str(relato))
 
     r = subprocess.run(['bash', str(repo / 'rodar.sh')], env=ambiente,
                        capture_output=True, text=True, timeout=60)
@@ -148,7 +158,7 @@ def test_registra_os_caminhos_da_execucao(tmp_path):
     repo.mkdir()
     montar_repo_falso(repo)
 
-    subprocess.run(['bash', str(repo / 'rodar.sh')], capture_output=True,
+    subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo), capture_output=True,
                    text=True, timeout=60)
 
     linhas = (repo / 'data' / '.ultima_execucao').read_text().splitlines()
@@ -166,7 +176,7 @@ def test_venv_ausente_aborta_com_mensagem_clara(tmp_path):
     montar_repo_falso(repo)
     (repo / 'venv' / 'bin' / 'activate').unlink()
 
-    r = subprocess.run(['bash', str(repo / 'rodar.sh')], capture_output=True,
+    r = subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo), capture_output=True,
                        text=True, timeout=60)
 
     assert r.returncode == 1
@@ -191,7 +201,7 @@ def test_apaga_logs_antigos_e_preserva_os_recentes(tmp_path):
     subprocess.run(['touch', '-d', '40 days ago', str(antigo_relato)], check=True)
     subprocess.run(['touch', '-d', '1 day ago', str(recente)], check=True)
 
-    r = subprocess.run(['bash', str(repo / 'rodar.sh')], capture_output=True,
+    r = subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo), capture_output=True,
                        text=True, timeout=60)
 
     assert r.returncode == 0
@@ -214,8 +224,38 @@ def test_retencao_de_logs_e_configuravel(tmp_path):
     alvo.write_text('x')
     subprocess.run(['touch', '-d', '5 days ago', str(alvo)], check=True)
 
-    ambiente = dict(os.environ, LOG_RETENCAO_DIAS='2')
+    ambiente = env_teste(repo, LOG_RETENCAO_DIAS='2')
     subprocess.run(['bash', str(repo / 'rodar.sh')], env=ambiente,
                    capture_output=True, text=True, timeout=60)
 
     assert not alvo.exists()
+
+
+def test_lock_e_compartilhado_entre_repos_diferentes(tmp_path):
+    """O robo de cota e o de credito entram no SIAFI com o MESMO usuario.
+
+    Se cada um tivesse o seu lock dentro do proprio repositorio, /cota e
+    /credito poderiam rodar juntos e o mainframe recusaria a segunda sessao
+    com 'UNABLE TO ESTABLISH SESSION' — foi o que derrubou a execucao de
+    26/08 as 11:56.
+    """
+    cota = tmp_path / 'cota'
+    credito = tmp_path / 'credito'
+    for repo in (cota, credito):
+        repo.mkdir()
+        montar_repo_falso(repo)
+
+    lock = str(tmp_path / 'compartilhado.lock')
+
+    primeiro = subprocess.Popen(['bash', str(cota / 'rodar.sh')],
+                                env=dict(os.environ, SIAFI_LOCK=lock),
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    esperar_lock(cota)
+
+    segundo = subprocess.run(['bash', str(credito / 'rodar.sh')],
+                             env=dict(os.environ, SIAFI_LOCK=lock),
+                             capture_output=True, text=True, timeout=60)
+
+    assert segundo.returncode == 10
+    assert 'em andamento' in segundo.stderr
+    assert primeiro.wait(timeout=30) == 0

@@ -21,11 +21,14 @@ mkdir -p "$REPO/data/logs"
 LOG="${ROBO_LOG:-$REPO/data/logs/robo-$CARIMBO.log}"
 export RELATO_ARQUIVO="${RELATO_ARQUIVO:-$REPO/data/logs/relato-$CARIMBO.jsonl}"
 
-# O lock impede que o bot e o robo.bat rodem ao mesmo tempo. flock -n falha
+# LOCK COMPARTILHADO com o robo de credito, de proposito e fora dos dois
+# repos: ambos entram no SIAFI com o MESMO usuario, e duas sessoes simultaneas
+# fazem o mainframe recusar com 'UNABLE TO ESTABLISH SESSION'. flock -n falha
 # imediatamente em vez de esperar: quem pediu recebe a resposta na hora.
-exec 9>"$REPO/data/.robo.lock"
+LOCK="${SIAFI_LOCK:-$HOME/.siafi-robo.lock}"
+exec 9>"$LOCK"
 if ! flock -n 9; then
-    echo "Ja existe uma execucao em andamento." >&2
+    echo "Ja existe uma execucao do robo (cota ou credito) em andamento." >&2
     exit 10
 fi
 

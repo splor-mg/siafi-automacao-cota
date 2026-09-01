@@ -32,18 +32,29 @@ SEGREDOS = [os.getenv('SENHA'), os.getenv('USUARIO')]
 USUARIOS_AUTORIZADOS = ler_lista_de_ids(
     os.getenv('TELEGRAM_USUARIOS_AUTORIZADOS'))
 
-ARQUIVO_ULTIMA = os.path.join(REPO, 'data', '.ultima_execucao')
-RODAR = os.path.join(REPO, 'rodar.sh')
+# Robos que o bot aciona. O de credito vive em outro repositorio; os dois
+# entram no SIAFI com o MESMO usuario, e o lock compartilhado do rodar.sh
+# garante que nunca rodem ao mesmo tempo.
+PROJETOS = {
+    'cota': {'nome': 'Cota', 'repo': REPO},
+    'credito': {
+        'nome': 'Crédito',
+        'repo': os.path.expanduser(
+            os.getenv('REPO_CREDITO', '~/code/splor-mg/siafi-automacao-credito')),
+    },
+}
 
 AJUDA = (
     'Robô SIAFI\n\n'
-    '/rodar — executa o robô (consolida as planilhas e processa no SIAFI)\n'
+    '/cota — aprovação e anulação de cota orçamentária\n'
+    '/credito — solicitações de crédito\n'
     '/status — diz se há execução em andamento\n'
     '/log — envia o log completo da última execução\n'
-    '/ajuda — esta mensagem'
+    '/ajuda — esta mensagem\n\n'
+    'Os dois robôs usam o mesmo usuário do SIAFI, então nunca rodam juntos.'
 )
 
-EXECUCAO = {'rodando': False, 'inicio': None, 'quem': None}
+EXECUCAO = {'rodando': False, 'inicio': None, 'quem': None, 'projeto': None}
 TRAVA = threading.Lock()
 
 
@@ -136,44 +147,62 @@ def enviar_documento(caminho, nome):
 
 
 def caminhos_ultima_execucao():
-    """(log, relato) da execucao mais recente, ou (None, None).
+    """(log, relato, nome) da execucao mais recente entre todos os robos.
 
-    O rodar.sh grava esses caminhos assim que pega o lock.
+    Cada repositorio grava o seu .ultima_execucao quando pega o lock; o /log
+    entrega o mais recente dos dois. Ler do disco (em vez de guardar em
+    memoria) faz o comando continuar funcionando depois de um restart.
     """
-    try:
-        with open(ARQUIVO_ULTIMA, encoding='utf-8') as f:
-            linhas = [l.strip() for l in f if l.strip()]
-        return linhas[0], linhas[1]
-    except (OSError, IndexError):
-        return None, None
+    melhor = None
+    for proj in PROJETOS.values():
+        arquivo = os.path.join(proj['repo'], 'data', '.ultima_execucao')
+        try:
+            with open(arquivo, encoding='utf-8') as f:
+                linhas = [l.strip() for l in f if l.strip()]
+            candidato = (os.path.getmtime(arquivo), linhas[0], linhas[1],
+                         proj['nome'])
+        except (OSError, IndexError):
+            continue
+        if melhor is None or candidato[0] > melhor[0]:
+            melhor = candidato
+
+    if melhor is None:
+        return None, None, None
+    return melhor[1], melhor[2], melhor[3]
 
 
-def executar(quem):
+def executar(quem, chave):
     """Roda o rodar.sh e publica os marcos no grupo.
 
     Roda numa thread para o loop de polling continuar respondendo /status
     durante os minutos que o robo leva.
     """
+    projeto = PROJETOS[chave]
     inicio = time.time()
     carimbo = datetime.now().strftime('%Y%m%d-%H%M%S')
 
     # O bot define os caminhos em vez de descobri-los depois: assim nao ha
     # risco de ler o relato da execucao ANTERIOR enquanto esta ainda comeca.
-    log = os.path.join(REPO, 'data', 'logs', f'robo-{carimbo}.log')
-    arquivo_relato = os.path.join(REPO, 'data', 'logs', f'relato-{carimbo}.jsonl')
+    logs = os.path.join(projeto['repo'], 'data', 'logs')
+    log = os.path.join(logs, f'robo-{carimbo}.log')
+    arquivo_relato = os.path.join(logs, f'relato-{carimbo}.jsonl')
 
     try:
         # SIAFI_VISIVEL=false a forca: o x3270 abre janela grafica via WSLg,
         # que depende da sessao grafica estar ativa. Com a tela do Windows
         # bloqueada isso nao e garantido, e o disparo pelo Telegram e sempre
         # desassistido. O duplo-clique no robo.bat continua respeitando o .env.
+        # ROBO_DESASSISTIDO: o robo de credito para no meio pedindo um 's' no
+        # teclado. Acionado daqui nao ha ninguem para digitar, e como servico
+        # do systemd o input() estouraria com EOFError.
         ambiente = dict(os.environ, ROBO_LOG=log, RELATO_ARQUIVO=arquivo_relato,
-                        SIAFI_VISIVEL='false')
+                        SIAFI_VISIVEL='false', ROBO_DESASSISTIDO='1')
 
-        enviar(f'Robô SIAFI · iniciado\npor {quem} · '
+        enviar(f'Robô SIAFI · {projeto["nome"]} · iniciado\npor {quem} · '
                f'{datetime.now().strftime("%d/%m às %H:%M")}')
 
-        proc = subprocess.Popen(['bash', RODAR], env=ambiente,
+        proc = subprocess.Popen(['bash', os.path.join(projeto['repo'], 'rodar.sh')],
+                                env=ambiente,
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
 
@@ -188,61 +217,65 @@ def executar(quem):
 
         codigo = proc.returncode
         if codigo == 10:
-            enviar('Já existe uma execução em andamento (iniciada pelo robo.bat).')
+            enviar('Já existe uma execução em andamento. Cota e crédito usam o '
+                   'mesmo usuário do SIAFI e não rodam ao mesmo tempo.')
         else:
             enviar(montar_final(ler_eventos(arquivo_relato), codigo,
-                                time.time() - inicio))
+                                time.time() - inicio, nome=projeto['nome']))
 
     except Exception as e:
         # Sem isto, o EXECUCAO ficaria preso em rodando=True e todo /rodar
         # futuro seria recusado ate alguem reiniciar o servico — sem ninguem
         # no grupo entender por que.
         print(f'[erro] falha ao executar o robo: {e}')
-        enviar(f'Falha ao executar o robô: {e}\n'
+        enviar(f'Falha ao executar o robô de {projeto["nome"]}: {e}\n'
                f'O log desta tentativa, se houver, está em {os.path.basename(log)}.')
 
     finally:
         with TRAVA:
-            EXECUCAO.update(rodando=False, inicio=None, quem=None)
+            EXECUCAO.update(rodando=False, inicio=None, quem=None,
+                            projeto=None)
 
 
-def comando_rodar(quem):
+def comando_rodar(quem, chave):
     with TRAVA:
         if EXECUCAO['rodando']:
             desde = datetime.fromtimestamp(EXECUCAO['inicio']).strftime('%H:%M')
-            enviar(f'Já tem execução em andamento desde {desde}, '
-                   f'iniciada por {EXECUCAO["quem"]}.')
+            enviar(f'Já tem execução do robô de {EXECUCAO["projeto"]} em '
+                   f'andamento desde {desde}, iniciada por {EXECUCAO["quem"]}.')
             return
-        EXECUCAO.update(rodando=True, inicio=time.time(), quem=quem)
+        EXECUCAO.update(rodando=True, inicio=time.time(), quem=quem,
+                        projeto=PROJETOS[chave]['nome'])
 
-    threading.Thread(target=executar, args=(quem,), daemon=True).start()
+    threading.Thread(target=executar, args=(quem, chave), daemon=True).start()
 
 
 def comando_status():
     with TRAVA:
-        rodando, inicio, quem = (EXECUCAO['rodando'], EXECUCAO['inicio'],
-                                 EXECUCAO['quem'])
+        rodando, inicio, quem, projeto = (EXECUCAO['rodando'], EXECUCAO['inicio'],
+                                          EXECUCAO['quem'], EXECUCAO['projeto'])
 
     if rodando:
-        enviar(f'Execução em andamento há {formatar_duracao(time.time() - inicio)}, '
-               f'iniciada por {quem}.')
+        enviar(f'Robô de {projeto} em andamento há '
+               f'{formatar_duracao(time.time() - inicio)}, iniciada por {quem}.')
         return
 
-    log, _ = caminhos_ultima_execucao()
+    log, _relato, nome = caminhos_ultima_execucao()
     if not log or not os.path.exists(log):
-        enviar('Nenhuma execução registrada ainda. Use /rodar.')
+        enviar('Nenhuma execução registrada ainda. Use /cota ou /credito.')
         return
 
     quando = datetime.fromtimestamp(os.path.getmtime(log))
-    enviar(f'Nenhuma execução em andamento. '
-           f'A última terminou em {quando.strftime("%d/%m às %H:%M")}.')
+    enviar(f'Nenhuma execução em andamento. A última foi do robô de {nome}, '
+           f'e terminou em {quando.strftime("%d/%m às %H:%M")}.')
 
 
 def comando_log():
-    log, _ = caminhos_ultima_execucao()
+    log, _relato, nome = caminhos_ultima_execucao()
     if not log or not os.path.exists(log):
         enviar('Não há log de execução ainda.')
         return
+    enviar(f'Log da última execução (robô de {nome}):')
     enviar_documento(log, os.path.basename(log))
 
 
@@ -251,16 +284,17 @@ def tratar(update):
     quem = msg.get('from', {}).get('first_name', 'alguém')
     texto = (msg.get('text') or '').split('@')[0].strip().lower()
 
-    if texto == '/rodar':
+    if texto.lstrip('/') in PROJETOS:
+        chave = texto.lstrip('/')
         if not pode_rodar(update, USUARIOS_AUTORIZADOS):
             # Responde em vez de ignorar: quem manda isto esta legitimamente no
             # grupo, e o silencio so viraria chamado de suporte.
-            print(f'[info] /rodar recusado: {quem} nao esta na allowlist')
+            print(f'[info] {texto} recusado: {quem} nao esta na allowlist')
             enviar(f'{quem}, você não está na lista de quem pode acionar o '
                    'robô. Fale com quem administra o bot.')
             return
-        print(f'[{datetime.now():%Y-%m-%d %H:%M:%S}] /rodar acionado por {quem}')
-        comando_rodar(quem)
+        print(f'[{datetime.now():%Y-%m-%d %H:%M:%S}] {texto} acionado por {quem}')
+        comando_rodar(quem, chave)
     elif texto == '/status':
         comando_status()
     elif texto == '/log':

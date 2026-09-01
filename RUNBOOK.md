@@ -130,13 +130,37 @@ A primeira instalação tem até **3 etapas**. Faça uma de cada vez, na ordem.
 
 | Comando | O que faz |
 |---------|-----------|
-| `/rodar` | Executa o robô |
-| `/status` | Diz se há execução em andamento |
+| `/cota` | Executa o robô de **cota orçamentária** |
+| `/credito` | Executa o robô de **crédito** |
+| `/status` | Diz se há execução em andamento, e de qual robô |
 | `/log` | Envia o log completo da última execução |
 | `/ajuda` | Lista os comandos |
 
-Depois do `/rodar` o bot manda três mensagens no grupo: o aviso de início, o
-resumo da planilha e do login, e no fim o resultado linha a linha.
+> O comando `/rodar` **não existe mais**. Com dois robôs no mesmo grupo ele
+> ficou ambíguo, e foi substituído por `/cota` e `/credito`.
+
+Depois do comando o bot manda três mensagens no grupo: o aviso de início, o
+resumo da planilha e do login, e no fim o resultado.
+
+## Os dois robôs nunca rodam ao mesmo tempo
+
+Cota e crédito entram no SIAFI com o **mesmo usuário**. Duas sessões
+simultâneas fazem o mainframe recusar a segunda, então o robô impede: se você
+pedir `/credito` enquanto o de cota está rodando, o bot responde que já há
+execução em andamento e não dispara nada. Vale para os dois `.bat` também.
+
+## Atenção especial ao `/credito`
+
+Quando você roda o crédito pelo **`robo_credito.bat`**, ele abre o `copia.xlsm`
+no Excel e espera você revisar e digitar `s`.
+
+Pelo **Telegram esse passo não acontece** — não há ninguém na frente da máquina
+para revisar. A conferência precisa ser feita **antes** de pôr as planilhas na
+pasta de origem.
+
+A análise de saldo automática continua valendo nos dois caminhos: se ela
+reprovar, o robô para e **nenhuma solicitação é enviada ao SIAFI**. Nesse caso
+a mensagem do grupo diz *"interrompido"*, e não *"FALHOU"*.
 
 > Quando o robô é acionado pelo Telegram, **nenhuma janela do SIAFI aparece na
 > tela** — ele trabalha por baixo dos panos. Isso é proposital: assim funciona

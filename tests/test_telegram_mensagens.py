@@ -354,3 +354,52 @@ def test_final_omite_grupo_e_ipu_de_relato_antigo():
             'R$ 74.000,00') in msg
     assert 'Grupo' not in msg
     assert 'IPU' not in msg
+
+
+# --- Dois robos no mesmo grupo ---------------------------------------------
+
+def test_final_identifica_qual_robo_rodou():
+    """Com /cota e /credito no mesmo grupo, a mensagem precisa dizer qual foi."""
+    msg = montar_final(eventos_de_exemplo(), codigo=0, duracao_seg=30,
+                       nome='Crédito')
+
+    assert 'Robô SIAFI · Crédito · concluído' in msg
+
+
+def test_final_sem_nome_mantem_o_cabecalho_antigo():
+    msg = montar_final(eventos_de_exemplo(), codigo=0, duracao_seg=30)
+
+    assert 'Robô SIAFI · concluído' in msg
+
+
+def test_codigo_2_do_credito_nao_e_falha():
+    """Analise de saldo reprovada interrompe ANTES de enviar qualquer coisa ao
+    SIAFI. Chamar isso de 'FALHOU' assustaria a equipe sem motivo."""
+    eventos = [{'tipo': 'aviso',
+                'texto': 'Análise de saldo reprovada: NENHUMA solicitação foi '
+                         'enviada ao SIAFI.'}]
+
+    msg = montar_final(eventos, codigo=2, duracao_seg=45, nome='Crédito')
+
+    assert 'FALHOU' not in msg
+    assert 'interrompido' in msg
+    assert 'NENHUMA solicitação foi enviada' in msg
+
+
+def test_final_mostra_documentos_do_robo_de_credito():
+    """O credito reporta por documento (UO + nº no SIAFI), nao por linha de
+    cota — o dominio dele e outro."""
+    eventos = [
+        {'tipo': 'planilha', 'texto': 'Planilhas consolidadas, validação OK.'},
+        {'tipo': 'login', 'texto': 'Login no SIAFI realizado'},
+        {'tipo': 'documento', 'texto': '...', 'linha': 12, 'uo': '1451',
+         'nr_doc': '2026NL00123', 'ok': True},
+        {'tipo': 'documento', 'texto': '...', 'linha': 20, 'uo': '2311',
+         'nr_doc': '', 'ok': False},
+    ]
+
+    msg = montar_final(eventos, codigo=0, duracao_seg=120, nome='Crédito')
+
+    assert 'UO 1451 · linha 12 · doc 2026NL00123' in msg
+    assert 'UO 2311 · linha 20 · não registrado no SIAFI' in msg
+    assert '2 linhas · 1 efetuada(s) · 0 pulada(s) · 1 com erro' in msg

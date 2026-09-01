@@ -7,6 +7,8 @@ justamente onde ninguem quer descobrir.
 import ast
 import os
 
+import pytest
+
 from telegram_mensagens import montar_final, montar_progresso
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,16 +31,30 @@ CONTRATO = {
     'aviso':          set(),
 }
 
+# O robo de credito vive em outro repositorio e reporta por documento, nao por
+# linha de planilha. O bot le os dois com o mesmo montar_final.
+REPO_CREDITO = os.path.expanduser('~/code/splor-mg/siafi-automacao-credito')
+FONTES_CREDITO = ('login.py', 'consolida.py', 'resultado.py')
 
-def campos_emitidos():
+CONTRATO_CREDITO = {
+    'planilha':  set(),
+    'login':     set(),
+    'documento': {'linha', 'uo', 'nr_doc', 'ok'},
+    'fim':       set(),
+    'erro':      set(),
+    'aviso':     set(),
+}
+
+
+def campos_emitidos(raiz=RAIZ, fontes=FONTES):
     """Le o codigo-fonte do robo e extrai os campos de cada chamada a relato().
 
     Usa AST em vez de executar o robo: rodar o login.py de verdade exigiria o
     SIAFI, o OneDrive e credenciais.
     """
     emitidos = {}
-    for nome in FONTES:
-        with open(os.path.join(RAIZ, 'siafi_automacao', nome), encoding='utf-8') as f:
+    for nome in fontes:
+        with open(os.path.join(raiz, 'siafi_automacao', nome), encoding='utf-8') as f:
             arvore = ast.parse(f.read())
 
         for no in ast.walk(arvore):
@@ -137,3 +153,22 @@ def test_execucao_real_gera_a_mensagem_de_progresso():
     assert msg.startswith('1 planilha(s) lida(s)')
     assert 'Login no SIAFI realizado' in msg
     assert '12 linha(s) pendente(s)' in msg
+
+
+@pytest.mark.skipif(not os.path.isdir(REPO_CREDITO),
+                    reason='repositorio do robo de credito nao esta nesta maquina')
+def test_o_robo_de_credito_emite_o_que_o_bot_consome():
+    """Mesma amarra do robo de cota, para o outro repositorio.
+
+    Sem isto, renomear um campo no resultado.py do credito deixaria a suite
+    verde e a mensagem do /credito quebraria so em producao.
+    """
+    assert campos_emitidos(REPO_CREDITO, FONTES_CREDITO) == CONTRATO_CREDITO
+
+
+@pytest.mark.skipif(not os.path.isdir(REPO_CREDITO),
+                    reason='repositorio do robo de credito nao esta nesta maquina')
+def test_todo_tipo_do_credito_tem_tratamento_no_bot():
+    """Um tipo que o bot nao conhece sumiria da mensagem em silencio."""
+    conhecidos = set(CONTRATO) | {'documento'}
+    assert set(campos_emitidos(REPO_CREDITO, FONTES_CREDITO)) <= conhecidos

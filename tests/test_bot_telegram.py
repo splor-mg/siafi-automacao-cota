@@ -1,3 +1,4 @@
+import os
 import time
 
 import pytest
@@ -9,9 +10,11 @@ from bot_telegram import gravar_offset, ler_eventos, ler_offset
 def estado_limpo():
     """EXECUCAO e global do modulo: sem isto um teste contamina o seguinte."""
     import bot_telegram
-    bot_telegram.EXECUCAO.update(rodando=False, inicio=None, quem=None)
+    bot_telegram.EXECUCAO.update(rodando=False, inicio=None, quem=None,
+                                 projeto=None)
     yield
-    bot_telegram.EXECUCAO.update(rodando=False, inicio=None, quem=None)
+    bot_telegram.EXECUCAO.update(rodando=False, inicio=None, quem=None,
+                                 projeto=None)
 
 
 def test_offset_ausente_devolve_none(tmp_path):
@@ -52,7 +55,7 @@ def test_tratar_ignora_comando_desconhecido(monkeypatch):
     enviadas = []
     monkeypatch.setattr(bot_telegram, 'enviar', enviadas.append)
     monkeypatch.setattr(bot_telegram, 'comando_rodar',
-                        lambda quem: enviadas.append('RODOU'))
+                        lambda quem, chave: enviadas.append('RODOU'))
 
     bot_telegram.tratar({'message': {'text': 'bom dia pessoal',
                                      'from': {'first_name': 'Ana'}}})
@@ -61,32 +64,92 @@ def test_tratar_ignora_comando_desconhecido(monkeypatch):
 
 
 def test_tratar_aceita_comando_com_nome_do_bot(monkeypatch):
-    """Em grupo o Telegram entrega '/rodar@nome_do_bot'."""
+    """Em grupo o Telegram entrega '/cota@nome_do_bot'."""
     import bot_telegram
     chamadas = []
-    monkeypatch.setattr(bot_telegram, 'comando_rodar', chamadas.append)
+    monkeypatch.setattr(bot_telegram, 'comando_rodar',
+                        lambda quem, chave: chamadas.append((quem, chave)))
 
-    bot_telegram.tratar({'message': {'text': '/rodar@robo_siafi_bot',
+    bot_telegram.tratar({'message': {'text': '/cota@robo_siafi_bot',
                                      'from': {'first_name': 'Ana'}}})
 
-    assert chamadas == ['Ana']
+    assert chamadas == [('Ana', 'cota')]
+
+
+def test_tratar_reconhece_os_dois_robos(monkeypatch):
+    """/cota e /credito acionam robos diferentes, em repositorios diferentes."""
+    import bot_telegram
+    chamadas = []
+    monkeypatch.setattr(bot_telegram, 'comando_rodar',
+                        lambda quem, chave: chamadas.append(chave))
+
+    for comando in ('/cota', '/credito'):
+        bot_telegram.tratar({'message': {'text': comando,
+                                         'from': {'first_name': 'Ana'}}})
+
+    assert chamadas == ['cota', 'credito']
+
+
+def test_tratar_ignora_o_antigo_rodar(monkeypatch):
+    """/rodar virou ambiguo com dois robos no grupo e foi retirado."""
+    import bot_telegram
+    chamadas = []
+    monkeypatch.setattr(bot_telegram, 'comando_rodar',
+                        lambda quem, chave: chamadas.append(chave))
+    monkeypatch.setattr(bot_telegram, 'enviar', lambda *a, **kw: None)
+
+    bot_telegram.tratar({'message': {'text': '/rodar',
+                                     'from': {'first_name': 'Ana'}}})
+
+    assert chamadas == []
+
+
+def projetos_falsos(tmp_path):
+    """Dois repositorios de mentira, cada um com a sua pasta data/."""
+    projetos = {}
+    for chave, nome in (('cota', 'Cota'), ('credito', 'Crédito')):
+        repo = tmp_path / chave
+        (repo / 'data').mkdir(parents=True)
+        projetos[chave] = {'nome': nome, 'repo': str(repo)}
+    return projetos
 
 
 def test_caminhos_ultima_execucao_sem_arquivo(monkeypatch, tmp_path):
     import bot_telegram
-    monkeypatch.setattr(bot_telegram, 'ARQUIVO_ULTIMA',
-                        str(tmp_path / 'nao-existe'))
-    assert bot_telegram.caminhos_ultima_execucao() == (None, None)
+    monkeypatch.setattr(bot_telegram, 'PROJETOS', projetos_falsos(tmp_path))
+
+    assert bot_telegram.caminhos_ultima_execucao() == (None, None, None)
 
 
 def test_caminhos_ultima_execucao_le_as_duas_linhas(monkeypatch, tmp_path):
     import bot_telegram
-    arquivo = tmp_path / '.ultima_execucao'
+    projetos = projetos_falsos(tmp_path)
+    monkeypatch.setattr(bot_telegram, 'PROJETOS', projetos)
+
+    arquivo = tmp_path / 'cota' / 'data' / '.ultima_execucao'
     arquivo.write_text('/tmp/robo.log\n/tmp/relato.jsonl\n', encoding='utf-8')
-    monkeypatch.setattr(bot_telegram, 'ARQUIVO_ULTIMA', str(arquivo))
 
     assert bot_telegram.caminhos_ultima_execucao() == (
-        '/tmp/robo.log', '/tmp/relato.jsonl')
+        '/tmp/robo.log', '/tmp/relato.jsonl', 'Cota')
+
+
+def test_log_entrega_a_execucao_mais_recente_entre_os_robos(monkeypatch, tmp_path):
+    """Com dois robos, o /log tem que achar o log mais novo dos dois — e dizer
+    de qual deles e."""
+    import bot_telegram
+    projetos = projetos_falsos(tmp_path)
+    monkeypatch.setattr(bot_telegram, 'PROJETOS', projetos)
+
+    antigo = tmp_path / 'cota' / 'data' / '.ultima_execucao'
+    antigo.write_text('/tmp/cota.log\n/tmp/cota.jsonl\n', encoding='utf-8')
+    os.utime(antigo, (1000, 1000))
+
+    novo = tmp_path / 'credito' / 'data' / '.ultima_execucao'
+    novo.write_text('/tmp/credito.log\n/tmp/credito.jsonl\n', encoding='utf-8')
+    os.utime(novo, (2000, 2000))
+
+    assert bot_telegram.caminhos_ultima_execucao() == (
+        '/tmp/credito.log', '/tmp/credito.jsonl', 'Crédito')
 
 
 def test_executar_libera_o_estado_mesmo_se_o_processo_nao_subir(monkeypatch):
@@ -101,16 +164,18 @@ def test_executar_libera_o_estado_mesmo_se_o_processo_nao_subir(monkeypatch):
         raise OSError('bash nao encontrado')
 
     monkeypatch.setattr(bot_telegram.subprocess, 'Popen', popen_quebrado)
-    bot_telegram.EXECUCAO.update(rodando=True, inicio=time.time(), quem='Ana')
+    bot_telegram.EXECUCAO.update(rodando=True, inicio=time.time(), quem='Ana',
+                                 projeto='Cota')
 
-    bot_telegram.executar('Ana')
+    bot_telegram.executar('Ana', 'cota')
 
     assert bot_telegram.EXECUCAO['rodando'] is False
     assert any('Falha ao executar' in m for m in enviadas)
 
 
-def test_comando_rodar_recusa_quando_ja_ha_execucao(monkeypatch):
-    """Duas execucoes simultaneas no SIAFI seriam um desastre."""
+def test_credito_e_recusado_enquanto_a_cota_roda(monkeypatch):
+    """O caso que mais importa com dois robos: eles usam o MESMO usuario do
+    SIAFI, entao /credito nao pode entrar enquanto /cota roda."""
     import bot_telegram
     enviadas = []
     threads_iniciadas = []
@@ -118,11 +183,13 @@ def test_comando_rodar_recusa_quando_ja_ha_execucao(monkeypatch):
     monkeypatch.setattr(bot_telegram.threading, 'Thread',
                         lambda *a, **kw: threads_iniciadas.append(kw))
 
-    bot_telegram.EXECUCAO.update(rodando=True, inicio=time.time(), quem='Ana')
-    bot_telegram.comando_rodar('Bruno')
+    bot_telegram.EXECUCAO.update(rodando=True, inicio=time.time(), quem='Ana',
+                                 projeto='Cota')
+    bot_telegram.comando_rodar('Bruno', 'credito')
 
     assert threads_iniciadas == []
-    assert any('Já tem execução em andamento' in m for m in enviadas)
+    assert any('Já tem execução do robô de Cota' in m for m in enviadas)
+    assert any('iniciada por Ana' in m for m in enviadas)
 
 
 # --- O laco de updates ------------------------------------------------------
@@ -130,7 +197,7 @@ def test_comando_rodar_recusa_quando_ja_ha_execucao(monkeypatch):
 GRUPO_TESTE = '-1004401529622'
 
 
-def update_bruto(update_id, texto='/rodar', idade_seg=0, chat=GRUPO_TESTE,
+def update_bruto(update_id, texto='/cota', idade_seg=0, chat=GRUPO_TESTE,
                  de=1296210429):
     return {'update_id': update_id, 'message': {
         'date': int(time.time()) - idade_seg,
@@ -144,7 +211,8 @@ def laco(monkeypatch):
     """Isola processar_updates: sem rede, sem disco, sem disparar o robo."""
     import bot_telegram
     disparos = []
-    monkeypatch.setattr(bot_telegram, 'comando_rodar', disparos.append)
+    monkeypatch.setattr(bot_telegram, 'comando_rodar',
+                        lambda quem, chave: disparos.append(quem))
     monkeypatch.setattr(bot_telegram, 'enviar', lambda *a, **kw: None)
     monkeypatch.setattr(bot_telegram, 'gravar_offset', lambda *a, **kw: None)
     monkeypatch.setattr(bot_telegram, 'CHAT_AUTORIZADO', GRUPO_TESTE)
@@ -224,6 +292,6 @@ def test_execucao_pelo_telegram_e_sempre_sem_janela(monkeypatch):
     monkeypatch.setattr(bot_telegram.subprocess, 'Popen', popen_falso)
     monkeypatch.setenv('SIAFI_VISIVEL', 'true')
 
-    bot_telegram.executar('Ana')
+    bot_telegram.executar('Ana', 'cota')
 
     assert capturado['env']['SIAFI_VISIVEL'] == 'false'

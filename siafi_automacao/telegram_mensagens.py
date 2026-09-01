@@ -119,6 +119,13 @@ def agrupar_linhas(eventos):
                           'valor': ev['valor'], 'retorno': None, 'ok': False})
         elif tipo == 'retorno' and itens and not itens[-1]['pulada']:
             itens[-1]['retorno'] = ev['retorno']
+        elif tipo == 'documento':
+            # O robo de credito reporta por documento (UO + numero no SIAFI),
+            # nao por linha de planilha: o dominio dele e outro.
+            itens.append({'linha': ev['linha'], 'pulada': False,
+                          'documento': True, 'uo': ev['uo'],
+                          'nr_doc': ev.get('nr_doc') or '',
+                          'ok': ev['ok'], 'retorno': None})
         elif tipo == 'resultado':
             for item in itens:
                 if item['linha'] == ev['linha'] and not item['pulada']:
@@ -130,6 +137,11 @@ def agrupar_linhas(eventos):
 def _texto_item(item):
     if item['pulada']:
         return f"Linha {item['linha']} · pulada ({item['motivo']})"
+
+    if item.get('documento'):
+        detalhe = (f"doc {item['nr_doc']}" if item['ok']
+                   else 'não registrado no SIAFI')
+        return f"UO {item['uo']} · linha {item['linha']} · {detalhe}"
 
     partes = [f"Linha {item['linha']}", item['operacao'],
               f"UO {item['uo']}", f"Ação {item['acao']}"]
@@ -171,14 +183,21 @@ def _cortar_corpo(cabecalho, corpo, rodape, limite):
     return corpo + aviso
 
 
-def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM):
+def montar_final(eventos, codigo, duracao_seg, limite=LIMITE_TELEGRAM, nome=None):
     itens = agrupar_linhas(eventos)
     duracao = formatar_duracao(duracao_seg)
 
+    # Com mais de um robo no mesmo grupo, a mensagem precisa dizer qual rodou.
+    titulo = f'Robô SIAFI · {nome}' if nome else 'Robô SIAFI'
+
     if codigo == 0:
-        cabecalho = f'Robô SIAFI · concluído em {duracao}'
+        cabecalho = f'{titulo} · concluído em {duracao}'
+    elif codigo == 2:
+        # Desfecho do robo de credito: a analise de saldo reprovou e NADA foi
+        # enviado ao SIAFI. Chamar de 'FALHOU' assustaria sem motivo.
+        cabecalho = f'{titulo} · interrompido em {duracao}'
     else:
-        cabecalho = f'Robô SIAFI · FALHOU (código {codigo}) após {duracao}'
+        cabecalho = f'{titulo} · FALHOU (código {codigo}) após {duracao}'
 
     efetuadas = sum(1 for i in itens if not i['pulada'] and i['ok'])
     puladas = sum(1 for i in itens if i['pulada'])
