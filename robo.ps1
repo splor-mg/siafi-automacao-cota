@@ -152,7 +152,8 @@ wsl -d Ubuntu -- bash -c "bash ~/code/splor-mg/siafi-automacao-cota/rodar.sh"
 
 if ($LASTEXITCODE -eq 10) {
     Write-Host ""
-    Write-Host "Ja existe uma execucao do robo em andamento. Aguarde ela terminar." -ForegroundColor Yellow
+    Write-Host "Ja existe uma execucao do robo (cota ou credito) em andamento." -ForegroundColor Yellow
+    Write-Host "Os dois usam o mesmo usuario do SIAFI. Aguarde terminar."       -ForegroundColor Yellow
 } elseif ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "O robo encerrou com erro (codigo $LASTEXITCODE)." -ForegroundColor Red
