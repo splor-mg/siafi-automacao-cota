@@ -403,3 +403,26 @@ def test_final_mostra_documentos_do_robo_de_credito():
     assert 'UO 1451 · linha 12 · doc 2026NL00123' in msg
     assert 'UO 2311 · linha 20 · não registrado no SIAFI' in msg
     assert '2 linhas · 1 efetuada(s) · 0 pulada(s) · 1 com erro' in msg
+
+
+def test_aspas_nao_viram_entidade_html():
+    """O Telegram so decodifica &lt; &gt; e &amp;. O escape() do Python troca
+    aspas por &quot;/&#x27; por padrao, e isso apareceria LITERALMENTE para a
+    equipe no meio da mensagem."""
+    eventos = [{'tipo': 'erro',
+                'texto': 'ValueError: expected "ok" or \'error\' result'}]
+
+    msg = montar_final(eventos, codigo=1, duracao_seg=5)
+
+    assert '&quot;' not in msg
+    assert '&#x27;' not in msg
+    assert '"ok"' in msg and "'error'" in msg
+
+
+def test_sinais_de_html_continuam_escapados():
+    """O que o Telegram exige continua valendo, senao ele recusa a mensagem."""
+    eventos = [{'tipo': 'erro', 'texto': 'falhou em <coluna & tal>'}]
+
+    msg = montar_final(eventos, codigo=1, duracao_seg=5)
+
+    assert '&lt;coluna &amp; tal&gt;' in msg

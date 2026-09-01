@@ -5,9 +5,19 @@ tudo que decide "quem pode acionar" e "o que sai no grupo" e testavel sem
 tocar na API do Telegram nem no SIAFI.
 """
 
-from html import escape
+from html import escape as _escape_html
 
 from relato import formatar_valor
+
+def escape(texto):
+    """Escapa so o que o Telegram exige: < > &.
+
+    O escape() do Python tambem troca aspas por &quot; e &#x27;, mas o Telegram
+    nao decodifica essas entidades — elas apareceriam literalmente no meio da
+    mensagem, e retorno do SIAFI tem aspas com frequencia.
+    """
+    return _escape_html(texto, quote=False)
+
 
 IDADE_MAXIMA_UPDATE = 300  # segundos
 LIMITE_TELEGRAM = 4096
