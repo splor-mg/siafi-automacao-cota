@@ -513,6 +513,56 @@ def remover_com_retry(caminho: str, tentativas=MOVER_TENTATIVAS, espera=MOVER_ES
     raise ultimo_erro
 
 
+def contar_pendentes(caminho: str) -> int:
+    """Linhas com dados mas sem Progresso preenchido — o que o robo ainda deve.
+
+    E o mesmo criterio que o login.py usa para montar a fila de pendentes.
+    """
+    try:
+        df = pd.read_excel(caminho)
+    except Exception:
+        return 0
+
+    if 'UO_COD' not in df.columns or 'Progresso' not in df.columns:
+        return 0
+
+    com_dados = df['UO_COD'].notna()
+    progresso = df['Progresso']
+    sem_progresso = progresso.isna() | (progresso.astype(str).str.strip() == '')
+    return int((com_dados & sem_progresso).sum())
+
+
+def retomar_conferencia_pendente(pasta_conferencia: str, pasta_entrada: str) -> bool:
+    """Sem planilha nova, retoma o conferência que ficou com linhas pendentes.
+
+    Acontece quando uma execucao consolida e so depois falha — o SIAFI recusar
+    a conexao, por exemplo. Nesse ponto os originais ja foram para Realizados e
+    o resgate devolveu o conferência para a pasta de conferência, com as linhas
+    por fazer. Sem isto a execucao seguinte diria 'nada a consolidar' e as
+    linhas ficariam presas ate alguem mover o arquivo na mao.
+
+    Move o arquivo para a pasta de entrada, de onde o login.py o pega.
+    """
+    info = encontrar_conferencia(pasta_conferencia)
+    if info is None:
+        print('Nenhum arquivo nas pastas de remanejamento. Nada a consolidar.')
+        return False
+
+    caminho = info[0]
+    pendentes = contar_pendentes(caminho)
+    if pendentes == 0:
+        print('Nenhuma planilha nova e nenhuma linha pendente no conferência. '
+              'Nada a fazer.')
+        return False
+
+    mover_com_seguranca(caminho, pasta_entrada)
+    print(f'Sem planilha nova, mas o conferência tem {pendentes} linha(s) '
+          f'pendente(s). Retomando de onde parou.')
+    relato('planilha', f'Sem planilha nova. Retomando {pendentes} linha(s) '
+                       'pendente(s) do conferência anterior.')
+    return True
+
+
 def mover_com_seguranca(origem: str, pasta_destino: str, tentativas=MOVER_TENTATIVAS, espera=MOVER_ESPERA_SEGUNDOS):
     """Move 'origem' para dentro de 'pasta_destino' (gerando sufixo (1), (2)...
     se ja existir um arquivo com o mesmo nome), com retry/backoff caso o
@@ -553,7 +603,10 @@ def main():
     # 1) Coleta os arquivos a consolidar ANTES de mexer em qualquer coisa
     arquivos_origem = coletar_arquivos_origem(pastas_origem)
     if not arquivos_origem:
-        print('Nenhum arquivo nas pastas de remanejamento. Nada a consolidar.')
+        # Pode haver um conferência com linhas pendentes de uma execucao que
+        # consolidou e falhou depois. Nesse caso, retoma em vez de desistir.
+        retomar_conferencia_pendente(pasta_conferencia,
+                                     resolver_pasta(ROBO_IPU2_PYTHON))
         return
 
     # 1.5) VALIDA todas as planilhas antes de consolidar/mover qualquer coisa.

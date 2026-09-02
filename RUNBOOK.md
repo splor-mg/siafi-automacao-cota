@@ -347,6 +347,13 @@ O robô não conseguiu entrar no SIAFI. Confira:
 
 Feche a janela preta e tente de novo desde o Passo 3.
 
+**Não precisa mexer em pasta nenhuma para tentar de novo.** Quando isso
+acontece, as planilhas já foram juntadas e o arquivo de conferência já existe
+com as linhas por fazer — só o SIAFI é que não abriu. Na execução seguinte o
+robô percebe isso e retoma de onde parou, mesmo sem nenhuma planilha nova na
+pasta. A mensagem vai dizer algo como *"Sem planilha nova. Retomando 27
+linha(s) pendente(s) do conferência anterior."*
+
 ## Apareceu "Nao foi possivel fazer login apos varias tentativas"
 
 Sua senha do SIAFI pode ter mudado. Peça para o **suporte técnico da DCMEFO** atualizar a senha do robô.
