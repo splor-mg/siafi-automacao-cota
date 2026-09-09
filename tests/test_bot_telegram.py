@@ -314,3 +314,28 @@ def test_ambiente_do_projeto_nao_vaza_o_env_do_bot(monkeypatch):
     assert 'ONEDRIVE_BASE' not in ambiente
     assert ambiente['COISA_DO_SISTEMA'] == 'preservado'
     assert ambiente['ROBO_LOG'] == '/tmp/x.log'
+
+
+def test_forca_ipv4_nas_chamadas_http():
+    """O DNS aqui devolve IPv6 para o api.telegram.org, mas o WSL nao tem rota
+    IPv6: o requests morria com 'Network is unreachable' e o bot ficava mudo,
+    recebendo comandos sem conseguir responder."""
+    import socket
+    import urllib3.util.connection
+
+    import bot_telegram  # noqa: F401 — o import e que aplica a configuracao
+
+    assert urllib3.util.connection.allowed_gai_family() == socket.AF_INET
+
+
+def test_token_nao_vaza_para_o_journal(monkeypatch):
+    """As excecoes do requests trazem a URL completa, e a URL da API embute o
+    token do bot. Sem redigir, ele fica em claro no journalctl."""
+    import bot_telegram
+    monkeypatch.setattr(bot_telegram, 'TOKEN', '123456:SEGREDO-DO-BOT')
+
+    limpo = bot_telegram.sem_token(
+        "Max retries exceeded with url: /bot123456:SEGREDO-DO-BOT/getUpdates")
+
+    assert 'SEGREDO-DO-BOT' not in limpo
+    assert '<TOKEN>' in limpo

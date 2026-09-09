@@ -6,12 +6,14 @@ montado e o acesso de rede ao SIAFI.
 """
 import json
 import os
+import socket
 import subprocess
 import threading
 import time
 from datetime import datetime
 
 import requests
+import urllib3.util.connection
 from dotenv import load_dotenv
 
 from telegram_mensagens import (autorizado, formatar_duracao, ler_lista_de_ids,
@@ -26,6 +28,23 @@ load_dotenv(os.path.join(REPO, '.env'))
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_AUTORIZADO = os.getenv('TELEGRAM_CHAT_ID')
 API = f'https://api.telegram.org/bot{TOKEN}'
+
+# Forca IPv4. O DNS desta rede devolve um AAAA para o api.telegram.org, mas o
+# WSL nao tem rota IPv6: o requests tentava o endereco v6 e morria com
+# 'Network is unreachable'. O bot ficava recebendo os comandos e sem conseguir
+# responder — mudo no grupo, mas disparando o robo.
+urllib3.util.connection.allowed_gai_family = lambda: socket.AF_INET
+
+
+def sem_token(texto):
+    """Tira o token das mensagens antes de irem para o journal.
+
+    As excecoes do requests trazem a URL completa, e a URL da API do Telegram
+    embute o token do bot — que ficaria em claro no journalctl.
+    """
+    return texto.replace(TOKEN, '<TOKEN>') if TOKEN else texto
+
+
 SEGREDOS = [os.getenv('SENHA'), os.getenv('USUARIO')]
 
 # Vazia = qualquer membro do grupo aciona o robo. Preenchida = so estes ids.
@@ -53,6 +72,7 @@ AJUDA = (
     '/ajuda — esta mensagem\n\n'
     'Os dois robôs usam o mesmo usuário do SIAFI, então nunca rodam juntos.'
 )
+
 
 def _chaves_do_env(caminho):
     """Nomes das variaveis definidas no .env deste repositorio."""
@@ -159,7 +179,7 @@ def enviar(texto):
             'text': texto.replace('<pre>', '').replace('</pre>', ''),
         })
     except Exception as e:
-        print(f'[aviso] falha ao enviar mensagem: {e}')
+        print(f'[aviso] falha ao enviar mensagem: {sem_token(str(e))}')
 
 
 def enviar_documento(caminho, nome):
@@ -175,7 +195,7 @@ def enviar_documento(caminho, nome):
             enviar(f'Não consegui enviar o log ({r.status_code}). '
                    f'Ele está no servidor em: {caminho}')
     except Exception as e:
-        print(f'[aviso] falha ao enviar documento: {e}')
+        print(f'[aviso] falha ao enviar documento: {sem_token(str(e))}')
         enviar(f'Não consegui enviar o log: {e}')
 
 
@@ -258,7 +278,7 @@ def executar(quem, chave):
         # Sem isto, o EXECUCAO ficaria preso em rodando=True e todo /rodar
         # futuro seria recusado ate alguem reiniciar o servico — sem ninguem
         # no grupo entender por que.
-        print(f'[erro] falha ao executar o robo: {e}')
+        print(f'[erro] falha ao executar o robo: {sem_token(str(e))}')
         enviar(f'Falha ao executar o robô de {projeto["nome"]}: {e}\n'
                f'O log desta tentativa, se houver, está em {os.path.basename(log)}.')
 
@@ -365,7 +385,7 @@ def processar_updates(updates):
         try:
             tratar(update)
         except Exception as e:
-            print(f'[erro] falha ao tratar update: {e}')
+            print(f'[erro] falha ao tratar update: {sem_token(str(e))}')
 
     return offset
 
@@ -386,7 +406,7 @@ def main():
             updates = r.json().get('result', [])
             espera = 1
         except Exception as e:
-            print(f'[aviso] falha ao consultar o Telegram: {e}')
+            print(f'[aviso] falha ao consultar o Telegram: {sem_token(str(e))}')
             time.sleep(espera)
             espera = min(espera * 2, 60)
             continue
