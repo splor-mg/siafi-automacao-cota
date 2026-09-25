@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 
 from fluxo_anular import anular
 from fluxo_aprovar import aprovar
+from config import ler_lista_de_uos
 from relato import relato
 
 # ---------------------------------------------------------------------------
@@ -30,6 +31,19 @@ siafi_host     = os.getenv('SIAFI_HOST', 'bhmvsb.prodemge.gov.br')
 siafi_visivel  = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
 
 month = datetime.today().strftime("%m")
+
+# ---------------------------------------------------------------------------
+# TESTE TEMPORARIO (setembro/2026)
+#
+# UOs que o robo NAO deve enviar ao SIAFI. As linhas delas sao puladas e a
+# coluna Progresso recebe o motivo, igual ao que ja se faz com IAG 1.
+#
+# PARA DESFAZER: esvazie ou remova UOS_BLOQUEADAS no .env. Nao precisa mexer
+# no codigo nem reiniciar nada — o robo le o .env a cada execucao.
+# ---------------------------------------------------------------------------
+UOS_BLOQUEADAS = ler_lista_de_uos(os.getenv('UOS_BLOQUEADAS'))
+MOTIVO_UO_BLOQUEADA = os.getenv(
+    'MOTIVO_UO_BLOQUEADA', 'Favor inserir as entregas junto as ações no OBZ!')
 
 # Marca da linha cuja operacao pode ter chegado ao SIAFI sem o robo ter lido o
 # retorno. Precisa ser texto nao vazio: e isso que a tira da fila de pendentes
@@ -560,6 +574,17 @@ if __name__ == "__main__":
             data_row = montar_data_row(get, month)
 
             # Remanejamentos so sao permitidos para IAG 0.
+            # Trava temporaria por UO — ver UOS_BLOQUEADAS no topo do arquivo.
+            # Vem antes do IAG para que o motivo mostrado seja o do OBZ.
+            if data_row['uo'] in UOS_BLOQUEADAS:
+                relato('linha_pulada',
+                       f"Linha {r}: UO {data_row['uo']} nao enviada ao SIAFI "
+                       f"({MOTIVO_UO_BLOQUEADA})",
+                       linha=r, motivo=MOTIVO_UO_BLOQUEADA)
+                ws.cell(row=r, column=col['Progresso']).value = MOTIVO_UO_BLOQUEADA
+                wb.save(caminho_local)
+                continue
+
             if data_row['iag'] == '1':
                 relato('linha_pulada', f"Linha {r}: IAG 1, pulando.",
                        linha=r, motivo='IAG 1')
