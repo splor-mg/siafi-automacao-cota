@@ -117,9 +117,10 @@ GRUPO_MIN, GRUPO_MAX = 1, 6
 IPU_MIN, IPU_MAX     = 0, 9
 IAG_VALIDOS          = {0, 1}
 
-# AMARRADO: aceita de 1 até 4 dígitos, pois o fluxo faz .zfill(4) e a aba DADOS
-# contém elemento-item válidos de 3 dígitos (ex.: 308 -> 0308). Se a regra de
-# negócio for "sempre 4 dígitos", troque AMARRADO_MIN_DIGITOS para 4.
+# AMARRADO: os digitos sao contados COMO FORAM DIGITADOS na planilha, com o
+# zero a esquerda. '0308' tem 4 digitos; '308' tem 3. Desde 06/07/2026 a regra
+# e "sempre 4 digitos" — para voltar a aceitar 1 a 3 (o fluxo faz .zfill(4)
+# e 308 vira 0308 de qualquer jeito), baixe AMARRADO_MIN_DIGITOS para 1.
 AMARRADO_MIN_DIGITOS = 4
 AMARRADO_MAX_DIGITOS = 4
 # ==========================================================
@@ -214,6 +215,33 @@ def _numero(v):
             return False, None
 
 
+def _digitos_digitados(v) -> int:
+    """Quantos digitos a pessoa digitou, contando o zero a esquerda.
+
+    So funciona se o valor chegar como texto — por isso a leitura das planilhas
+    passa pelo _ler_planilha(), que preserva o AMARRADO.
+    """
+    texto = str(v).strip()
+    if texto.endswith('.0'):        # numero que o Excel guardou como float
+        texto = texto[:-2]
+    return len(texto)
+
+
+def _ler_planilha(caminho: str, **kwargs) -> pd.DataFrame:
+    """Le a planilha preservando o AMARRADO como texto.
+
+    O pandas converte '0308' em 308 na leitura: o zero a esquerda sumia antes
+    de a validacao ver o valor, e um AMARRADO correto era reprovado por ter
+    "3 digitos".
+
+    O dtype casa pelo nome CRU da coluna, e os cabecalhos so sao limpos de
+    espacos depois; por isso o nome real e descoberto antes.
+    """
+    colunas = pd.read_excel(caminho, nrows=0, **kwargs).columns
+    como_texto = {c: str for c in colunas if str(c).strip() == 'AMARRADO'}
+    return pd.read_excel(caminho, dtype=como_texto, **kwargs)
+
+
 def _num_digitos(n: int) -> int:
     return len(str(abs(int(n))))
 
@@ -300,9 +328,12 @@ def _validar_linha(row, arquivo: str, linha_excel: int, erros: list):
         ok_amarr, amarr_int = _inteiro(amarr)
         if not ok_amarr:
             add('AMARRADO', amarr, 'AMARRADO deve ser um número inteiro')
-        elif not (AMARRADO_MIN_DIGITOS <= _num_digitos(amarr_int) <= AMARRADO_MAX_DIGITOS):
-            add('AMARRADO', amarr,
-                f'AMARRADO deve ter até {AMARRADO_MAX_DIGITOS} dígitos')
+        elif not (AMARRADO_MIN_DIGITOS <= _digitos_digitados(amarr) <= AMARRADO_MAX_DIGITOS):
+            if AMARRADO_MIN_DIGITOS == AMARRADO_MAX_DIGITOS:
+                regra = f'{AMARRADO_MAX_DIGITOS} dígitos (ex.: 0308)'
+            else:
+                regra = f'de {AMARRADO_MIN_DIGITOS} a {AMARRADO_MAX_DIGITOS} dígitos'
+            add('AMARRADO', amarr, f'AMARRADO deve ter {regra}')
 
     # Exclusão mútua: exatamente um dos dois preenchido
     if glob_preench and amarr_preench:
@@ -369,7 +400,7 @@ def validar_arquivo(caminho: str, erros: list):
     houve falha ao abrir (o erro correspondente já é acrescentado à lista)."""
     nome = os.path.basename(caminho)
     try:
-        df = pd.read_excel(caminho, sheet_name=0)
+        df = _ler_planilha(caminho, sheet_name=0)
     except Exception as e:
         erros.append((nome, '-', '-', '', f'Falha ao abrir o arquivo: {e}'))
         return False
@@ -461,7 +492,7 @@ def resumir_erros(erros: list, limite: int = 10) -> str:
 # ===========================================================================
 def ler_arquivo_origem(caminho: str) -> pd.DataFrame:
     """Lê a 1ª aba, descarta linhas-lixo e alinha as colunas ao layout do conferência."""
-    df = pd.read_excel(caminho, sheet_name=0)
+    df = _ler_planilha(caminho, sheet_name=0)
     df.columns = [str(c).strip() for c in df.columns]
 
     if 'UO_COD' not in df.columns:
