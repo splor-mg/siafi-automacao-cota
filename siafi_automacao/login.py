@@ -168,6 +168,40 @@ def conectar_siafi(host, visivel, tentativas=CONEXAO_TENTATIVAS, espera=CONEXAO_
     raise SystemExit(1)
 
 
+def senha_expirada(em):
+    """Procura o aviso de senha expirada em qualquer linha da tela.
+
+    Varre a tela inteira em vez de apostar numa linha fixa: errar a linha faria
+    o robo seguir adiante e morrer depois em 'Nao foi possivel fazer login',
+    escondendo o motivo real. Em caso de falha de leitura devolve False, para
+    nao trocar um diagnostico ruim por uma excecao no meio do login.
+    """
+    try:
+        tela = '\n'.join(em.string_get(l, 1, 80) for l in range(1, 25))
+    except Exception:
+        return False
+    return 'SENHA EXPIRADA' in tela.upper()
+
+
+def abortar_senha_expirada():
+    """Encerra o robo explicando o que fazer. Codigo 3, tratado no robo.ps1.
+
+    Diferente do robo de credito, aqui nao encerra o emulador: o login roda
+    dentro do try/except/finally do fluxo principal, e e ele que devolve a
+    planilha para a pasta de conferencia e encerra o emulador. O SystemExit(3)
+    e relancado de la, entao o codigo chega intacto ao robo.ps1 e ao bot.
+    """
+    print()
+    print("=" * 70)
+    print("Senha expirada. Abra o SIAFI manualmente e atualize sua senha.")
+    print("Apos isso, salve a nova senha no arquivo .env e execute o script novamente.")
+    print("=" * 70)
+    relato('erro', 'Senha do SIAFI expirada. Atualize a senha no SIAFI '
+                   'manualmente, grave a nova no .env e acione de novo. '
+                   'Nada foi enviado ao SIAFI.')
+    raise SystemExit(3)
+
+
 def resgatar_planilha(wb, ws, caminho_local, caminho_destino):
     """Devolve a planilha para a pasta de conferencia depois de uma falha.
 
@@ -501,6 +535,11 @@ if __name__ == "__main__":
         em.fill_field(21, 13, senha, 8)
         em.send_enter()
 
+        # O aviso de senha expirada pode aparecer logo apos o primeiro Enter.
+        time.sleep(1)
+        if senha_expirada(em):
+            abortar_senha_expirada()
+
         max_tentativas = 10
         tentativas = 0
         while tentativas < max_tentativas:
@@ -519,6 +558,11 @@ if __name__ == "__main__":
                 print(f"Tentativa {tentativas + 1} - tela de aviso detectada, passando...")
                 em.send_enter()
             tentativas += 1
+
+            # Fora do try de proposito, como no robo de credito. O aviso pode
+            # aparecer so depois de um Enter, numa tela intermediaria.
+            if senha_expirada(em):
+                abortar_senha_expirada()
 
         if tentativas == max_tentativas:
             relato('erro', "Não foi possível fazer login após várias tentativas.")
