@@ -36,7 +36,7 @@ month = datetime.today().strftime("%m")
 # TESTE TEMPORARIO (setembro/2026)
 #
 # UOs que o robo NAO deve enviar ao SIAFI. As linhas delas sao puladas e a
-# coluna Progresso recebe o motivo, igual ao que ja se faz com IAG 1.
+# coluna Progresso recebe o motivo, e a linha nao vai ao SIAFI.
 #
 # PARA DESFAZER: esvazie ou remova UOS_BLOQUEADAS no .env. Nao precisa mexer
 # no codigo nem reiniciar nada — o robo le o .env a cada execucao.
@@ -617,22 +617,17 @@ if __name__ == "__main__":
             get = lambda nome: ws.cell(row=r, column=col[nome]).value
             data_row = montar_data_row(get, month)
 
-            # Remanejamentos so sao permitidos para IAG 0.
+            # IAG 1 e processado normalmente desde 07/10/2026; antes era pulado
+            # com 'IAG 1 - Não Realizado'. Os fluxos ja enviam o IAG da planilha
+            # ao SIAFI, entao nao ha tratamento especial a fazer.
+
             # Trava temporaria por UO — ver UOS_BLOQUEADAS no topo do arquivo.
-            # Vem antes do IAG para que o motivo mostrado seja o do OBZ.
             if data_row['uo'] in UOS_BLOQUEADAS:
                 relato('linha_pulada',
                        f"Linha {r}: UO {data_row['uo']} nao enviada ao SIAFI "
                        f"({MOTIVO_UO_BLOQUEADA})",
                        linha=r, motivo=MOTIVO_UO_BLOQUEADA)
                 ws.cell(row=r, column=col['Progresso']).value = MOTIVO_UO_BLOQUEADA
-                wb.save(caminho_local)
-                continue
-
-            if data_row['iag'] == '1':
-                relato('linha_pulada', f"Linha {r}: IAG 1, pulando.",
-                       linha=r, motivo='IAG 1')
-                ws.cell(row=r, column=col['Progresso']).value = 'IAG 1 - Não Realizado'
                 wb.save(caminho_local)
                 continue
 
