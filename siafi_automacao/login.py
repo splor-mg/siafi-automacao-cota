@@ -301,6 +301,9 @@ def traduzir_progresso(retorno):
             'Valor a aprovar maior que o saldo disponível',
         "Inconsistencia no Registro da Contabilizacao":
             'Erro de Saldo Contábil',
+        # 0017 ainda na tela depois dos dois PF5: a operacao nao foi gravada.
+        "0017-TECLE PF5 PARA CONFIRMAR OU PF2 PARA ANULAR.":
+            'Operação não confirmada no SIAFI',
         "0139- PROGRAMA DE TRABALHO NAO ENCONTRADO PARA GM/FP.":
             'Programa de trabalho não encontrado para GM/FP',
         "0139- VALORES A ANULAR MAIOR QUE SALDO DISPONIVEL.":

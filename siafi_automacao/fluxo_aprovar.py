@@ -76,6 +76,9 @@ def aprovar(em, data_row):
             em.wait_for_field()
             time.sleep(1)
             retorno = em.string_get(1, 1, 80).strip()
+            if retorno == "0017-TECLE PF5 PARA CONFIRMAR OU PF2 PARA ANULAR.":
+                # PF5 nao confirmou: o SIAFI abriu janela de inconsistencia por cima
+                retorno = em.string_get(4, 19, 46).strip() or retorno
             break
 
     relato('retorno', f"SIAFI retornou: {retorno}", retorno=str(retorno))
