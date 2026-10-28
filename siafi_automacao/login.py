@@ -286,15 +286,20 @@ def localizar_aba(wb):
 
 def traduzir_progresso(retorno):
     """Converte a mensagem crua do SIAFI no texto que vai para a coluna
-    'Progresso'. Mensagens conhecidas viram um texto amigavel; qualquer outro
-    retorno e tratado como sucesso ('Ok').
+    'Progresso'. So '0011-REGISTRO EFETUADO' vira 'Ok'; mensagens de erro
+    conhecidas viram um texto amigavel e qualquer outro retorno vira 'Erro'.
     Para incluir novas mensagens, basta acrescentar uma linha no mapa abaixo."""
     if retorno is None:
-        return 'Ok'
+        return 'Erro'
     retorno = retorno.strip()
 
+    if retorno.startswith("0011-REGISTRO EFETUADO"):
+        return 'Ok'
     if retorno.startswith("E90 - SALDO ZERADO NA CONTA"):
         return 'Saldo zerado na conta'
+    # O numero entre parenteses no fim da Z03 pode variar.
+    if retorno.startswith("Z03-SIAFI INDISPONIVEL PARA ATUALIZACAO DE DADOS"):
+        return 'SIAFI indisponível para atualização, tente mais tarde'
 
     mapa = {
         "0139- VALOR A APROVAR MAIOR QUE SALDO DISPONIVEL NO PROJ/ATIV.":
@@ -322,7 +327,9 @@ def traduzir_progresso(retorno):
         "Linha sem valor de anulação/aprovação":
             'Linha sem valor de anulação/aprovação',
     }
-    return mapa.get(retorno, 'Ok')
+    # Ate 28/10/2026 o padrao era 'Ok', e a Z03 (SIAFI indisponivel) marcou
+    # como feitas 15 linhas que nao foram gravadas.
+    return mapa.get(retorno, 'Erro')
 
 
 def formatar_planilha(ws):

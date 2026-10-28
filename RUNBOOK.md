@@ -303,7 +303,9 @@ Quando o robô termina, ele escreve o resultado de cada linha na coluna **Progre
 
 | O que está escrito | O que significa |
 |--------------------|-----------------|
-| `Ok` | Deu tudo certo |
+| `Ok` | Deu tudo certo (o SIAFI respondeu `0011-REGISTRO EFETUADO`) |
+| `SIAFI indisponível para atualização, tente mais tarde` | O SIAFI estava fora do ar para gravação e nada foi feito. Apague o Progresso da linha e rode de novo mais tarde |
+| `Erro` | O SIAFI respondeu uma mensagem que o robô não conhece. **Confira no SIAFI** e no log (`/log`) o que aconteceu |
 | `Saldo zerado na conta` | Não tinha saldo para fazer a operação |
 | `Valor a anular maior que o saldo disponível` | O valor pedido é maior que o saldo |
 | `Valor a aprovar maior que o saldo disponível` | Não tinha saldo suficiente para aprovar |
