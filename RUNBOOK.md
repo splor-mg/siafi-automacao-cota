@@ -304,7 +304,7 @@ Quando o robô termina, ele escreve o resultado de cada linha na coluna **Progre
 | O que está escrito | O que significa |
 |--------------------|-----------------|
 | `Ok` | Deu tudo certo (o SIAFI respondeu `0011-REGISTRO EFETUADO`) |
-| `SIAFI indisponível para atualização, tente mais tarde` | O SIAFI estava fora do ar para gravação e nada foi feito. Apague o Progresso da linha e rode de novo mais tarde |
+| `SIAFI indisponível para atualização, tente mais tarde` | O SIAFI estava fora do ar para gravação e nada foi feito. **Não apague o Progresso para rodar de novo.** Veja abaixo. |
 | `Erro` | O SIAFI respondeu uma mensagem que o robô não conhece. **Confira no SIAFI** e no log (`/log`) o que aconteceu |
 | `Saldo zerado na conta` | Não tinha saldo para fazer a operação |
 | `Valor a anular maior que o saldo disponível` | O valor pedido é maior que o saldo |
@@ -331,6 +331,26 @@ O que fazer:
    volta para a fila e o robô a processa na próxima execução.
 
 > As linhas que já tinham a coluna Progresso preenchida são **puladas**. O robô só faz as que ainda estão em branco.
+
+## Se aparecer `SIAFI indisponível para atualização, tente mais tarde`
+
+Nada foi gravado no SIAFI, e a linha precisa ir de novo. **Não apague o Progresso
+dela para o robô refazer.** O Portal Orçamentário lê o resultado de cada linha uma
+vez só: ele já avisou o órgão que a linha não foi executada, e o órgão reenvia num
+pedido novo. Refeita aqui também, a cota sairia duas vezes, e o Portal continuaria
+dizendo que a linha falhou.
+
+Na conferência, as linhas de todos os arquivos da rodada se misturam, ordenadas por
+UO, e não dá para saber de qual arquivo cada uma veio. Quem diz é o log da rodada,
+que lista cada arquivo lido (`Lido: <nome>`). O `/log` manda o da última execução;
+os anteriores ficam em `data/logs` por 30 dias.
+
+1. **Arquivo do Portal**, com o nome começando pelo número do pedido, como
+   `1501-2026-0023 SEPLAG.xlsx`: não faça nada aqui. O órgão recebeu o aviso e
+   reenvia pelo Portal.
+2. **Planilha que veio por email**: copie as linhas que falharam para uma planilha
+   nova, salve em `Remanejamentos` e rode mais tarde. A linha antiga fica com o
+   resultado que teve, e a nova ganha o dela.
 
 ---
 
