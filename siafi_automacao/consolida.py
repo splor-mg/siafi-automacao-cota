@@ -17,7 +17,8 @@ Fluxo:
                            e começa um conferência novo (Execução = 1).
 
 3. Consolida todos os .xlsx/.xls das pastas REMANEJAMENTOS, ordena o bloco novo
-   por UO_COD (crescente) e depois Anular (crescente).
+   por UO_COD (crescente) e depois Anular (crescente). A coluna Pedido guarda o
+   nome (sem extensão) do arquivo de origem de cada linha.
 
 4. Salva o consolidado em ROBO_IPU2_PYTHON com o nome "Conferencia arquivo robo <hoje>".
    Ao final, a pasta CONFERENCIA fica VAZIA:
@@ -76,11 +77,15 @@ ABA_SAIDA      = 'Planilha1'
 MOVER_TENTATIVAS      = int(os.getenv('MOVER_TENTATIVAS', '6'))
 MOVER_ESPERA_SEGUNDOS = float(os.getenv('MOVER_ESPERA_SEGUNDOS', '2'))
 
+# O Portal Orçamentário lê esta planilha pelos nomes da linha 1 da primeira aba
+# e recusa o arquivo inteiro se faltar um deles: incluir coluna é seguro, mas não
+# renomeie as existentes nem repita um nome (ver tests/test_coluna_pedido.py).
 COLUNAS_CONFERENCIA = [
-    'Execução', 'UO_COD', 'Grupo', 'IAG', 'Fonte', 'IPU', 'Ação',
+    'Execução', 'Pedido', 'UO_COD', 'Grupo', 'IAG', 'Fonte', 'IPU', 'Ação',
     'GLOBAL', 'AMARRADO', 'Anular', 'Aprovar', 'UO Financiadora', 'Progresso',
 ]
-COLUNAS_DADOS   = [c for c in COLUNAS_CONFERENCIA if c != 'Execução']
+# 'Execução' e 'Pedido' são preenchidas aqui; não vêm da planilha de origem.
+COLUNAS_DADOS   = [c for c in COLUNAS_CONFERENCIA if c not in ('Execução', 'Pedido')]
 COLUNAS_VALOR   = ['Anular', 'Aprovar']
 COLUNAS_CODIGO  = [
     'Execução', 'UO_COD', 'Grupo', 'IAG', 'Fonte', 'IPU', 'Ação',
@@ -501,6 +506,8 @@ def ler_arquivo_origem(caminho: str) -> pd.DataFrame:
     df['UO_COD'] = pd.to_numeric(df['UO_COD'], errors='coerce')
     df = df[df['UO_COD'].notna()].copy()
     df = df.reindex(columns=COLUNAS_DADOS)
+    # A ordenação por UO mistura os arquivos da rodada: cada linha guarda o seu.
+    df.insert(0, 'Pedido', os.path.splitext(os.path.basename(caminho))[0])
 
     for col in COLUNAS_VALOR:
         df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
@@ -690,7 +697,8 @@ def main():
         conferencia_antigo, dia_arq, mes_arq = info
         mesma_data = (dia_arq == hoje.day and mes_arq == hoje.month)
         if mesma_data:
-            base_existente = pd.read_excel(conferencia_antigo)
+            # Como texto: um nome só de dígitos perderia o zero à esquerda.
+            base_existente = pd.read_excel(conferencia_antigo, dtype={'Pedido': str})
             base_existente.columns = [str(c).strip() for c in base_existente.columns]
             seq_max    = pd.to_numeric(base_existente['Execução'], errors='coerce').max()
             sequencial = int(seq_max) + 1 if pd.notna(seq_max) else 1
