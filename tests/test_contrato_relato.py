@@ -42,7 +42,7 @@ CONTRATO_CREDITO = {
     'planilha_final': {'arquivo'},
     'login':     set(),
     'pendentes': set(),
-    'documento': {'linha', 'uo', 'nr_doc', 'ok'},
+    'documento': {'linha', 'uo', 'nr_doc', 'motivo', 'ok'},
     'fim':       set(),
     'erro':      set(),
     'aviso':     set(),

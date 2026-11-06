@@ -405,6 +405,24 @@ def test_final_mostra_documentos_do_robo_de_credito():
     assert '2 linhas · 1 efetuada(s) · 0 pulada(s) · 1 com erro' in msg
 
 
+def test_final_mostra_o_motivo_da_recusa_do_robo_de_credito():
+    """Em 06/11/2026 o grupo recebeu 'UO 1101 · linha 4 · nao registrado no
+    SIAFI' e ninguem sabia o que fazer: o SIAFI tinha recusado por falta de
+    saldo de COTA, e a correcao nao estava na planilha."""
+    eventos = [
+        {'tipo': 'login', 'texto': 'Login no SIAFI realizado'},
+        {'tipo': 'documento', 'texto': '...', 'linha': 4, 'uo': '1101',
+         'nr_doc': '', 'ok': False,
+         'motivo': 'SIAFI recusou a anulação por falta de saldo de cota — '
+                   'anule a cota para liberar o crédito'},
+    ]
+
+    msg = montar_final(eventos, codigo=0, duracao_seg=46, nome='Crédito')
+
+    assert ('UO 1101 · linha 4 · SIAFI recusou a anulação por falta de saldo '
+            'de cota — anule a cota para liberar o crédito') in msg
+
+
 def test_aspas_nao_viram_entidade_html():
     """O Telegram so decodifica &lt; &gt; e &amp;. O escape() do Python troca
     aspas por &quot;/&#x27; por padrao, e isso apareceria LITERALMENTE para a

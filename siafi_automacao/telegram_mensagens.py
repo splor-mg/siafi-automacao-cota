@@ -135,6 +135,9 @@ def agrupar_linhas(eventos):
             itens.append({'linha': ev['linha'], 'pulada': False,
                           'documento': True, 'uo': ev['uo'],
                           'nr_doc': ev.get('nr_doc') or '',
+                          # Por que o SIAFI recusou. Com .get porque relatos
+                          # gravados antes do campo existir ainda sao lidos.
+                          'motivo': ev.get('motivo') or '',
                           'ok': ev['ok'], 'retorno': None})
         elif tipo == 'resultado':
             for item in itens:
@@ -149,8 +152,10 @@ def _texto_item(item):
         return f"Linha {item['linha']} · pulada ({item['motivo']})"
 
     if item.get('documento'):
+        # 'nao registrado no SIAFI' nao diz o que fazer a seguir. Quando o
+        # robo sabe o motivo da recusa, e ele que vai para o grupo.
         detalhe = (f"doc {item['nr_doc']}" if item['ok']
-                   else 'não registrado no SIAFI')
+                   else (item.get('motivo') or 'não registrado no SIAFI'))
         return f"UO {item['uo']} · linha {item['linha']} · {detalhe}"
 
     partes = [f"Linha {item['linha']}", item['operacao'],
