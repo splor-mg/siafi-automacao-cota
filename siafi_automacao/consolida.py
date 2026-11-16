@@ -6,8 +6,13 @@ Fluxo:
 0. VALIDA todos os arquivos das pastas de remanejamento ANTES de qualquer
    consolidação/movimentação. Se qualquer linha violar as regras de negócio,
    imprime TODOS os erros (arquivo, linha, coluna, valor) e aborta com código
-   de saída != 0 — o que faz o subprocess.run(..., check=True) do orquestrador
-   interromper todo o fluxo antes de tocar no SIAFI.
+   de saída != 0 — o login.py confere o código e interrompe todo o fluxo antes
+   de tocar no SIAFI.
+
+   Sem nenhum arquivo nas pastas de remanejamento, nada é consolidado: se o
+   conferência da pasta CONFERENCIA ainda tiver linhas pendentes (execução
+   anterior que falhou depois de consolidar), ele é devolvido a
+   ROBO_IPU2_PYTHON para o login.py retomar de onde parou.
 
 1. Procura o arquivo "Conferencia arquivo robo <dd.mm>" na pasta CONFERENCIA.
 
@@ -25,11 +30,15 @@ Fluxo:
    - mesma data  -> o arquivo lido é consolidado e movido para ROBO_IPU2_PYTHON;
    - data diferente -> o antigo vai para REALIZADOS_CONFERENCIA e o novo para ROBO_IPU2_PYTHON.
 
-5. Só DEPOIS de salvar com sucesso, move os arquivos de origem para REALIZADOS.
+5. Só DEPOIS de salvar com sucesso vem a arrumação: move os arquivos de origem
+   para REALIZADOS e, por último, tira o conferência antigo da pasta. Se um
+   desses passos falhar (planilha aberta no Excel, OneDrive sincronizando), a
+   execução aborta e a seguinte continua daí, em vez de consolidar de novo —
+   ver retomar_consolidacao_interrompida().
 
-OBS.: como o arquivo SAI da pasta CONFERENCIA, para uma 2ª rodada no MESMO dia
-apensar corretamente (Execução +1), o arquivo precisa ser devolvido à pasta
-CONFERENCIA por outro processo antes da próxima execução.
+OBS.: o arquivo SAI da pasta CONFERENCIA. Quem o devolve para lá é o login.py,
+ao terminar a rodada (ou ao resgatar a planilha depois de uma falha); é isso
+que permite a 2ª rodada no MESMO dia apensar corretamente (Execução +1).
 
 OBS. (lock do OneDrive): todas as pastas acima ficam dentro de uma árvore
 sincronizada pelo cliente OneDrive do Windows (acessada via /mnt/c/... no
@@ -404,6 +413,13 @@ def validar_arquivo(caminho: str, erros: list):
     encontrados à lista 'erros'. Retorna True se o arquivo foi lido; False se
     houve falha ao abrir (o erro correspondente já é acrescentado à lista)."""
     nome = os.path.basename(caminho)
+    # O .xls nunca foi lido de fato: falta o xlrd. A recusa ja acontecia, mas
+    # com 'Import xlrd failed', que nao diz a ninguem o que fazer.
+    if nome.lower().endswith('.xls'):
+        erros.append((nome, '-', '-', '',
+                      'Formato .xls (Excel antigo) não é lido pelo robô. '
+                      'Abra o arquivo no Excel e salve como .xlsx'))
+        return False
     try:
         df = _ler_planilha(caminho, sheet_name=0)
     except Exception as e:
@@ -630,6 +646,176 @@ def mover_com_seguranca(origem: str, pasta_destino: str, tentativas=MOVER_TENTAT
     raise ultimo_erro
 
 
+def arquivar_origens(arquivos: list):
+    """Move as planilhas de origem já consolidadas para REALIZADOS.
+
+    Se uma não sair (aberta no Excel, OneDrive sincronizando), avisa o grupo e
+    aborta. As que já saíram não voltam: a execução seguinte continua daqui
+    (ver retomar_consolidacao_interrompida), em vez de consolidar de novo."""
+    for caminho in arquivos:
+        nome = os.path.basename(caminho)
+        try:
+            mover_com_seguranca(caminho, REALIZADOS)
+        except OSError as e:
+            print(f'[ERRO] Não foi possível mover {caminho} para {REALIZADOS} '
+                  f'após {MOVER_TENTATIVAS} tentativas: {e}')
+            relato('erro',
+                   f'Não foi possível arquivar a planilha {nome}: ela está aberta no '
+                   'Excel ou o OneDrive ainda está sincronizando. Nada foi enviado ao '
+                   'SIAFI. Feche o arquivo e acione de novo: o robô continua de onde '
+                   'parou.')
+            raise SystemExit(1)
+
+
+def tirar_conferencia_antigo(conferencia_antigo: str, substituido: bool):
+    """Esvazia a pasta CONFERENCIA depois que o consolidado novo está salvo.
+
+    substituido=True é o conferência do mesmo dia: as linhas dele já estão no
+    consolidado novo, então ele é removido. Senão é o de outro dia, que vai
+    para REALIZADOS_CONFERENCIA.
+
+    Se o arquivo estiver travado, ABORTA em vez de seguir com ele esquecido na
+    pasta: o login.py devolve o conferência para lá no fim da rodada, e é
+    melhor a trava aparecer agora do que depois de o SIAFI ter sido tocado."""
+    try:
+        if substituido:
+            remover_com_retry(conferencia_antigo)
+            print('Conferência de hoje consolidado e removido da pasta de origem.')
+        else:
+            mover_com_seguranca(conferencia_antigo, REALIZADOS_CONFERENCIA)
+            print(f'Conferência antigo arquivado em: {REALIZADOS_CONFERENCIA}')
+    except OSError as e:
+        print(f'[ERRO] Não foi possível tirar {conferencia_antigo} da pasta de '
+              f'conferência após {MOVER_TENTATIVAS} tentativas: {e}')
+        # O detalhe acima fica no log; isto é o que chega ao grupo.
+        relato('erro',
+               'O OneDrive está segurando o arquivo de conferência anterior e não '
+               'deixou tirá-lo da pasta. Nada foi enviado ao SIAFI. Espere o '
+               'OneDrive terminar de sincronizar e acione de novo: o robô continua '
+               'de onde parou.')
+        raise SystemExit(1)
+
+
+def _nome_sem_extensao(caminho: str) -> str:
+    return os.path.splitext(os.path.basename(caminho))[0]
+
+
+def _pedidos_da_ultima_rodada(caminho: str) -> set:
+    """Nomes (coluna Pedido) das planilhas da última rodada de um conferência.
+    Conjunto vazio se não der para saber."""
+    try:
+        df = pd.read_excel(caminho, dtype={'Pedido': str})
+    except Exception:
+        return set()
+    df.columns = [str(c).strip() for c in df.columns]
+    if 'Execução' not in df.columns or 'Pedido' not in df.columns:
+        return set()
+    execucao = pd.to_numeric(df['Execução'], errors='coerce')
+    if execucao.isna().all():
+        return set()
+    pedidos = df.loc[execucao == execucao.max(), 'Pedido'].dropna()
+    return {p for p in pedidos if p.strip()}
+
+
+def _planilhas_soltas_em(pasta: str) -> set:
+    """Nomes, sem extensão, das planilhas soltas numa pasta. Desconsidera o
+    ' (1)', ' (2)'... que o mover_com_seguranca acrescenta a nome repetido."""
+    if not os.path.isdir(pasta):
+        return set()
+    achadas = set()
+    for nome in os.listdir(pasta):
+        if nome.startswith('~$') or not nome.lower().endswith(('.xlsx', '.xls')):
+            continue
+        if not os.path.isfile(os.path.join(pasta, nome)):
+            continue
+        base = os.path.splitext(nome)[0]
+        achadas.add(base)
+        achadas.add(re.sub(r' \(\d+\)$', '', base))
+    return achadas
+
+
+def retomar_consolidacao_interrompida(pasta_entrada: str, pastas_origem: list,
+                                      pasta_conferencia: str) -> bool:
+    """Trata o consolidado que sobrou em ROBO_IPU2_PYTHON de uma execução que
+    abortou depois de salvá-lo.
+
+    Em operação normal essa pasta está vazia quando o consolida.py começa: o
+    login.py tira o arquivo de lá assim que a consolidação termina. Se há um
+    conferência nela, a consolidação anterior salvou o arquivo e parou no meio
+    da arrumação (arquivar as planilhas de origem, tirar o conferência antigo
+    da pasta) — tipicamente por uma planilha aberta no Excel ou pelo OneDrive
+    segurando um arquivo.
+
+    Consolidar de novo a partir desse estado perde linhas: as planilhas que já
+    foram arquivadas não são lidas outra vez, e o consolidado novo sobrescreve
+    o que as continha. Por isso:
+
+    - nenhuma planilha tinha sido arquivada -> descarta a sobra e devolve
+      False: o main() consolida do zero, com as planilhas como estão agora;
+    - alguma já tinha -> termina a arrumação e devolve True: o main() para por
+      aí e o login.py processa o arquivo que já estava pronto. Planilha que
+      chegou depois fica para a próxima execução;
+    - a sobra não se explica (as planilhas dela não estão na fila nem em
+      REALIZADOS) -> aborta sem mexer em nada, para alguém decidir.
+
+    Quais planilhas a sobra contém vem da coluna Pedido da última rodada."""
+    info = encontrar_conferencia(pasta_entrada)
+    if info is None:
+        return False
+
+    sobra = info[0]
+    nome_sobra = os.path.basename(sobra)
+    print(f'A consolidação anterior não terminou: {nome_sobra} ficou em {pasta_entrada}.')
+
+    pedidos = _pedidos_da_ultima_rodada(sobra)
+    na_fila = {_nome_sem_extensao(c): c for c in coletar_arquivos_origem(pastas_origem)}
+    fora_da_fila = sorted(p for p in pedidos if p not in na_fila)
+
+    if pedidos and not fora_da_fila:
+        try:
+            remover_com_retry(sobra)
+        except OSError as e:
+            print(f'[ERRO] Não foi possível remover {sobra}: {e}')
+            relato('erro',
+                   f'O OneDrive está segurando o arquivo {nome_sobra}, que sobrou da '
+                   'execução anterior. Nada foi enviado ao SIAFI. Espere o OneDrive '
+                   'terminar de sincronizar e acione de novo.')
+            raise SystemExit(1)
+        print('Nenhuma planilha dela tinha sido arquivada: consolidando de novo, do zero.')
+        return False
+
+    arquivadas = _planilhas_soltas_em(REALIZADOS)
+    sem_explicacao = [p for p in fora_da_fila if p not in arquivadas]
+    if not pedidos or sem_explicacao:
+        motivo = (f'a(s) planilha(s) {", ".join(sem_explicacao)}, de onde vêm as linhas '
+                  'dele, não está(ão) em Remanejamentos nem em Realizados'
+                  if sem_explicacao else
+                  'não deu para ler de quais planilhas vêm as linhas dele')
+        relato('erro',
+               f'Há um arquivo de conferência parado em "Robo (IPU 2)/Python" '
+               f'({nome_sobra}) e o robô não sabe se ele ainda vale: {motivo}. '
+               'Nada foi enviado ao SIAFI nem movido. Suporte: se as linhas pendentes '
+               'dele devem ser processadas, mova o arquivo para "Conferencia arquivo '
+               'robo"; se não, apague-o. Depois acione de novo.')
+        raise SystemExit(1)
+
+    ainda_na_fila = [na_fila[p] for p in sorted(pedidos) if p in na_fila]
+    arquivar_origens(ainda_na_fila)
+
+    antigo = encontrar_conferencia(pasta_conferencia)
+    if antigo is not None:
+        tirar_conferencia_antigo(
+            antigo[0], substituido=os.path.basename(antigo[0]) == nome_sobra)
+
+    novas = len(na_fila) - len(ainda_na_fila)
+    relato('planilha',
+           f'Consolidação anterior retomada ({nome_sobra}): as planilhas já estavam '
+           'consolidadas, faltava terminar de arquivá-las.'
+           + (f' {novas} planilha(s) nova(s) fica(m) para a próxima execução — '
+              'acione de novo depois desta.' if novas else ''))
+    return True
+
+
 def main():
     hoje = date.today()
     nome_saida = f'{PREFIXO_NOME} {hoje.day:02d}{SEPARADOR_DATA}{hoje.month:02d}.xlsx'
@@ -637,6 +823,13 @@ def main():
     pasta_conferencia = resolver_pasta(CONFERENCIA)
     pastas_origem     = [resolver_pasta(p) for p in PASTAS_REMANEJAMENTOS]
     print(f'Pasta conferência: {pasta_conferencia}')
+
+    # 0.5) Consolidação anterior que salvou o arquivo e não terminou a
+    #      arrumação: ou ela é concluída aqui (e não há mais nada a fazer), ou
+    #      a sobra é descartada e tudo é consolidado de novo, abaixo.
+    if retomar_consolidacao_interrompida(resolver_pasta(ROBO_IPU2_PYTHON),
+                                         pastas_origem, pasta_conferencia):
+        return
 
     # 1) Coleta os arquivos a consolidar ANTES de mexer em qualquer coisa
     arquivos_origem = coletar_arquivos_origem(pastas_origem)
@@ -648,8 +841,8 @@ def main():
         return
 
     # 1.5) VALIDA todas as planilhas antes de consolidar/mover qualquer coisa.
-    #      Se houver qualquer erro, imprime tudo e ABORTA com código != 0 para
-    #      interromper o orquestrador (subprocess.run(..., check=True)).
+    #      Se houver qualquer erro, imprime tudo e ABORTA com código != 0, que
+    #      o login.py confere antes de seguir para o SIAFI.
     print(f'Validando {len(arquivos_origem)} arquivo(s) de remanejamento...')
     erros = validar_todos(arquivos_origem)
     if erros:
@@ -737,37 +930,24 @@ def main():
            f'{len(arquivos_origem)} planilha(s) lida(s), validação OK '
            f'({len(final)} linhas)')
 
-    # 8) SÓ AGORA esvazia a pasta CONFERENCIA e move as origens.
-    #    Ponto original do erro: o conferencia_antigo pode estar com lock de
-    #    sincronizacao do OneDrive. Agora tenta de novo com backoff e, se
-    #    mesmo assim falhar, ABORTA em vez de seguir com o arquivo velho
-    #    esquecido na pasta (o que fazia o proximo encontrar_conferencia()
-    #    pegá-lo de novo e arriscar duplicar linhas).
-    if conferencia_antigo is not None:
-        if base_existente is not None:
-            if os.path.abspath(conferencia_antigo) != os.path.abspath(destino_final):
-                try:
-                    remover_com_retry(conferencia_antigo)
-                    print('Conferência de hoje consolidado e removido da pasta de origem.')
-                except OSError as e:
-                    print(
-                        f'[ERRO] Consolidado salvo em {destino_final}, mas não foi possível '
-                        f'remover o original em {conferencia_antigo} após {MOVER_TENTATIVAS} '
-                        f'tentativas: {e}'
-                    )
-                    print(
-                        'Abortando para evitar que o arquivo antigo seja lido novamente na '
-                        'próxima execução e duplique linhas já consolidadas. Verifique se o '
-                        'OneDrive terminou de sincronizar e rode novamente.'
-                    )
-                    raise SystemExit(1)
-        else:
-            mover_com_seguranca(conferencia_antigo, REALIZADOS_CONFERENCIA)
-            print(f'Conferência antigo arquivado em: {REALIZADOS_CONFERENCIA}')
-
-    for caminho in arquivos_origem:
-        mover_com_seguranca(caminho, REALIZADOS)
+    # 8) SÓ AGORA a arrumação: arquiva as origens e esvazia a pasta CONFERENCIA.
+    #    Qualquer um dos dois pode falhar por trava do Windows (planilha aberta
+    #    no Excel, OneDrive sincronizando). Nesse caso a execução aborta com o
+    #    consolidado já salvo, e a seguinte continua daqui pelo
+    #    retomar_consolidacao_interrompida().
+    #
+    #    As origens vêm ANTES do conferência antigo de propósito: enquanto
+    #    alguma planilha ainda não foi arquivada, o conferência do dia continua
+    #    na pasta, e uma nova consolidação do zero ainda acha as rodadas
+    #    anteriores. Na ordem inversa, a trava numa planilha fazia a execução
+    #    seguinte recomeçar sem elas.
+    arquivar_origens(arquivos_origem)
     print(f'{len(arquivos_origem)} arquivo(s) de origem movidos para: {REALIZADOS}')
+
+    if (conferencia_antigo is not None
+            and os.path.abspath(conferencia_antigo) != os.path.abspath(destino_final)):
+        tirar_conferencia_antigo(conferencia_antigo,
+                                 substituido=base_existente is not None)
 
 
 if __name__ == '__main__':

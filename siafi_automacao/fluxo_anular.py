@@ -81,9 +81,6 @@ def anular(em, data_row):
                 retorno = em.string_get(4, 19, 46).strip() or retorno
             break
 
-    ## erro de saldo contabil aparece aqui.... precisa ser estudado
-
-
     relato('retorno', f"SIAFI retornou: {retorno}", retorno=str(retorno))
     em.send_pf(3)  # envia F3
     em.wait_for_field()

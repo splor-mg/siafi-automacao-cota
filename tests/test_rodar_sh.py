@@ -259,3 +259,141 @@ def test_lock_e_compartilhado_entre_repos_diferentes(tmp_path):
     assert segundo.returncode == 10
     assert 'em andamento' in segundo.stderr
     assert primeiro.wait(timeout=30) == 0
+
+
+# --- Saida ao vivo e encerramento de fora -----------------------------------
+
+def log_da_execucao(repo):
+    logs = list((repo / 'data' / 'logs').glob('robo-*.log'))
+    return logs[0].read_text(encoding='utf-8') if logs else ''
+
+
+def esperar_no_log(repo, trecho, timeout):
+    limite = time.time() + timeout
+    while time.time() < limite:
+        if trecho in log_da_execucao(repo):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_saida_do_robo_chega_ao_log_enquanto_ele_ainda_roda(tmp_path):
+    """Com a saida do Python num pipe (o tee), ela fica num buffer de 8 KB e
+    so aparece quando o robo termina: a janela preta do robo.bat ficava muda a
+    execucao inteira, e um robo travado nao deixava nada no log."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    montar_repo_falso(repo)      # imprime uma linha e dorme 5 segundos
+    ambiente = env_teste(repo)
+    ambiente.pop('PYTHONUNBUFFERED', None)
+
+    proc = subprocess.Popen(['bash', str(repo / 'rodar.sh')], env=ambiente,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        assert esperar_no_log(repo, 'robo falso rodando', timeout=3)
+        assert proc.poll() is None, 'o robo ja tinha terminado: o teste nao provou nada'
+    finally:
+        proc.wait(timeout=30)
+
+
+def test_encerramento_de_fora_nao_corta_o_log_do_resgate(tmp_path):
+    """No reinicio do servico do bot o systemd manda SIGTERM a todos os
+    processos de uma vez. O login.py trata o sinal e devolve a planilha; se o
+    tee morresse na hora, o que o robo fez nesse resgate nao ficaria no log —
+    e os prints dele passariam a estourar com BrokenPipeError."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    montar_repo_falso(repo)
+    (repo / 'siafi_automacao' / 'login.py').write_text(
+        'import signal, sys, time\n'
+        'def encerrar(sinal, quadro):\n'
+        '    time.sleep(0.5)\n'
+        '    print("resgate feito", flush=True)\n'
+        '    sys.exit(143)\n'
+        'signal.signal(signal.SIGTERM, encerrar)\n'
+        'print("robo falso rodando", flush=True)\n'
+        'time.sleep(30)\n')
+
+    proc = subprocess.Popen(['bash', str(repo / 'rodar.sh')], env=env_teste(repo),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True)
+    assert esperar_no_log(repo, 'robo falso rodando', timeout=20)
+
+    os.killpg(proc.pid, 15)      # o grupo inteiro, como o systemd faz
+    proc.wait(timeout=30)
+
+    assert esperar_no_log(repo, 'resgate feito', timeout=10)
+
+
+# --- Dependencias depois do git pull ----------------------------------------
+
+def montar_repo_com_pip_falso(repo):
+    """Repo falso com requirements.txt e um 'pip' que so anota como foi chamado."""
+    montar_repo_falso(repo)
+    (repo / 'siafi_automacao' / 'login.py').write_text('print("robo falso rodando")\n')
+    (repo / 'requirements.txt').write_text('pandas==3.0.2\n')
+    (repo / 'venv' / 'bin' / 'activate').write_text('export PATH="$PWD/venv/bin:$PATH"\n')
+    pip = repo / 'venv' / 'bin' / 'pip'
+    pip.write_text('#!/usr/bin/env bash\n'
+                   'echo "$@" >> "$(dirname "$0")/../../pip.log"\n'
+                   'exit "${FALSO_PIP_CODIGO:-0}"\n')
+    pip.chmod(0o755)
+
+
+def rodar(repo, **extra):
+    return subprocess.run(['bash', str(repo / 'rodar.sh')], env=env_teste(repo, **extra),
+                          capture_output=True, text=True, timeout=60)
+
+
+def carimbo_confere(repo):
+    return subprocess.run(['sha256sum', '--status', '-c', 'venv/.requirements.sha256'],
+                          cwd=repo).returncode == 0
+
+
+def test_requirements_alterado_pelo_pull_reinstala_as_dependencias(tmp_path):
+    """O rodar.sh da 'git pull' a cada execucao, mas nunca reinstalava as
+    dependencias: uma biblioteca nova no requirements.txt quebrava a maquina
+    com ImportError na execucao seguinte."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    montar_repo_com_pip_falso(repo)
+    assert rodar(repo).returncode == 0           # registra o estado atual
+    (repo / 'requirements.txt').write_text('pandas==3.0.2\nxlrd==2.0.1\n')
+
+    r = rodar(repo)
+
+    assert r.returncode == 0
+    assert '-r requirements.txt' in (repo / 'pip.log').read_text()
+    assert carimbo_confere(repo)
+    assert 'robo falso rodando' in r.stdout
+
+
+def test_requirements_igual_nao_chama_o_pip(tmp_path):
+    """Sem mudanca nao ha o que instalar: nada de rede a cada execucao."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    montar_repo_com_pip_falso(repo)
+
+    assert rodar(repo).returncode == 0
+    assert rodar(repo).returncode == 0
+
+    assert not (repo / 'pip.log').exists()
+    assert carimbo_confere(repo)
+
+
+def test_falha_ao_instalar_dependencias_avisa_e_roda_mesmo_assim(tmp_path):
+    """Sem internet o pip falha. Melhor rodar com as dependencias atuais e
+    tentar de novo na proxima do que nao rodar."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    montar_repo_com_pip_falso(repo)
+    assert rodar(repo).returncode == 0
+    (repo / 'requirements.txt').write_text('pandas==3.0.2\nxlrd==2.0.1\n')
+
+    r = rodar(repo, FALSO_PIP_CODIGO='1')
+
+    assert r.returncode == 0
+    assert 'Nao foi possivel atualizar as dependencias' in r.stdout
+    assert 'robo falso rodando' in r.stdout
+    # O carimbo continua o antigo: a proxima execucao tenta de novo.
+    assert not carimbo_confere(repo)

@@ -94,9 +94,9 @@ A primeira instalação tem até **3 etapas**. Faça uma de cada vez, na ordem.
 
 1. Depois de reiniciar, uma janela vai abrir sozinha. Ela tem fundo escuro e letras claras.
 2. Ela vai pedir para criar um **nome de usuário**. Digite uma palavra simples, por exemplo `siafi`, e aperte **Enter**.
-
-   > As letras que você digita aqui **não aparecem** na tela. É normal e proposital. Continue digitando mesmo sem ver.
 3. Em seguida ela pede uma **senha**. Digite uma senha simples e **anote em um papel** para não esquecer. Aperte **Enter**.
+
+   > As letras da senha **não aparecem** na tela enquanto você digita. É normal e proposital. Continue digitando mesmo sem ver.
 4. Ela vai pedir para **repetir a senha**. Digite a mesma senha de novo e aperte **Enter**.
 5. Quando terminar, **feche essa janela** (clique no X).
 
@@ -109,7 +109,7 @@ A primeira instalação tem até **3 etapas**. Faça uma de cada vez, na ordem.
 
    | Quando aparecer | Digite |
    |-----------------|--------|
-   | `SISTEMA` | O nome do sistema. Normalmente: `SIAFI` |
+   | `SISTEMA` | O nome do sistema, com **4 letras** (com 5 o robô para logo depois do login). O suporte técnico informa qual é |
    | `USUARIO` | O seu login do SIAFI |
    | `SENHA` | A sua senha do SIAFI *(as letras não aparecem ao digitar — é normal)* |
    | `UNIDADE_EXECUTORA` | O código da sua unidade. Exemplo: `1451` |
@@ -184,8 +184,8 @@ não atrapalha.
 
 ## Duas execuções nunca acontecem ao mesmo tempo
 
-Se alguém der `/rodar` enquanto o robô já está em andamento — pelo Telegram ou
-por duplo-clique no `robo.bat` — o bot responde que já existe execução e
+Se alguém der `/cota` ou `/credito` enquanto um robô já está em andamento — pelo
+Telegram ou por duplo-clique no `robo.bat` — o bot responde que já existe execução e
 **não** dispara uma segunda. Vale o contrário também: se o `robo.bat` for
 acionado enquanto o bot está executando, a janela preta avisa e não roda.
 Deixar duas execuções mexerem na mesma cota ao mesmo tempo bagunçaria o
@@ -220,10 +220,13 @@ qualquer pessoa do grupo aciona. **Entrar no grupo é o mesmo que ganhar
 permissão de aprovar e anular cota no SIAFI de produção** — não adicione
 ninguém sem combinar antes.
 
-**Com lista de pessoas:** só quem está na lista pode dar `/rodar`. Os demais
-membros continuam usando `/status`, `/log` e `/ajuda` normalmente — eles
-acompanham o resultado, mas não disparam. Quem não está na lista e tenta
-`/rodar` recebe uma resposta explicando, e nada acontece.
+**Com lista de pessoas:** só quem está na lista pode dar `/cota` ou `/credito`.
+Os demais membros continuam usando `/status`, `/log` e `/ajuda` normalmente —
+eles acompanham o resultado, mas não disparam. Quem não está na lista e tenta
+`/cota` ou `/credito` recebe uma resposta explicando, e nada acontece.
+
+O comando só vale **com a barra na frente**. A palavra `cota` solta numa
+conversa do grupo não dispara nada.
 
 Para montar a lista, descubra o id de cada pessoa: peça para ela mandar uma
 mensagem no grupo e abra `https://api.telegram.org/bot<TOKEN>/getUpdates` —
@@ -277,12 +280,31 @@ Por isso, se a mudança for em `bot_telegram.py`, `telegram_mensagens.py` ou
 sudo systemctl restart siafi-bot
 ```
 
+> ⚠️ **Nunca reinicie o serviço com um robô em andamento.** O reinício encerra
+> o robô junto com o bot, no meio da linha que ele estiver fazendo. O robô ainda
+> devolve a planilha e marca essa linha como `INTERROMPIDA - VERIFICAR NO SIAFI`,
+> mas o grupo **não recebe o resultado** e alguém precisa conferir a linha no
+> SIAFI. Mande `/status` antes e espere terminar.
+
 Mudanças em `login.py`, `consolida.py`, `fluxo_aprovar.py`, `fluxo_anular.py`
 ou `rodar.sh` valem na execução seguinte, sem reiniciar nada.
 
 > A armadilha: um `git pull` (feito pelo próprio robô numa execução) atualiza
 > os arquivos do bot no disco, mas o bot continua rodando a versão antiga até
 > alguém reiniciar. O disco fica novo e o comportamento fica velho.
+
+## Na virada do ano
+
+A pasta do robô no OneDrive fica dentro da pasta do ano
+(`.../2026/Robo - Remanejamento e aprovacao de cota`). Quando a equipe abrir a
+pasta do ano seguinte, o caminho precisa ser trocado em três lugares — senão o
+robô continua lendo e gravando na pasta do ano anterior, sem erro nenhum:
+
+- `ONEDRIVE_BASE` no `.env` do robô de cota;
+- `ONEDRIVE_BASE` no `.env` do robô de crédito;
+- as pastas configuradas no sincronizador do Portal Orçamentário.
+
+Não precisa reiniciar nada: o robô lê o `.env` a cada execução.
 
 ## Se o bot não responder
 
@@ -309,11 +331,21 @@ Quando o robô termina, ele escreve o resultado de cada linha na coluna **Progre
 | `Saldo zerado na conta` | Não tinha saldo para fazer a operação |
 | `Valor a anular maior que o saldo disponível` | O valor pedido é maior que o saldo |
 | `Valor a aprovar maior que o saldo disponível` | Não tinha saldo suficiente para aprovar |
+| `Saldo de crédito a aprovar zerado` | Não havia crédito orçamentário a aprovar naquele projeto/atividade |
+| `Erro de Saldo Contábil` | O SIAFI abriu a janela *"Inconsistência no Registro da Contabilização"* e **não gravou** a operação |
+| `Operação não confirmada no SIAFI` | O SIAFI ficou pedindo a confirmação (PF5) e **não gravou** a operação |
 | `Proj/Ativ ou Fonte/Proc./IAG inexistente para a UO` | Uma classificação não foi encontrada |
+| `Programa de trabalho não encontrado para GM/FP` | O programa de trabalho não existe para aquele grupo e fonte |
 | `Grupo de despesa inexistente` | O grupo de despesa está errado |
 | `Elemento/item não marcado para a UO beneficiada` | Faltou uma marcação no elemento/item |
-| `Linha sem GLOBAL/AMARRADO definido` | A linha da planilha está sem o tipo |
+| `Linha sem GLOBAL/AMARRADO definido` | A linha da planilha está sem o tipo. Não foi enviada ao SIAFI |
+| `Linha sem valor de anulação/aprovação` | A linha está sem valor em `Anular` e em `Aprovar`. Não foi enviada ao SIAFI |
+| `Linha com dado inválido na planilha` | Algum campo da linha está ilegível (texto onde devia haver número, por exemplo). Não foi enviada ao SIAFI; as demais linhas seguiram normalmente |
 | `INTERROMPIDA - VERIFICAR NO SIAFI` | **Exige ação sua.** Veja abaixo. |
+
+> Se aparecer um texto que não está nesta tabela numa linha que nem foi ao SIAFI,
+> é o motivo da **trava por UO** (`UOS_BLOQUEADAS` no `.env`), que o suporte
+> técnico liga e desliga. A linha foi pulada de propósito.
 
 ## Se aparecer `INTERROMPIDA - VERIFICAR NO SIAFI`
 
@@ -322,6 +354,10 @@ O robô parou no meio dessa linha e **não sabe se a operação entrou no SIAFI*
 Nesse caso ele *não* deixa a linha em branco de propósito: linha em branco seria
 reprocessada na próxima execução, e se a operação já tivesse entrado, ela seria
 feita **duas vezes**.
+
+A mensagem do grupo traz, quando o robô conseguiu ler, o que estava escrito na
+tela do SIAFI naquele momento (*"Na tela do SIAFI estava: ..."*). A tela inteira
+fica no log, que o `/log` envia — é o que o suporte técnico vai pedir.
 
 O que fazer:
 
@@ -362,7 +398,7 @@ lido (`Lido: <nome>`). O `/log` manda o da última execução; os anteriores fic
 - Provavelmente o arquivo Excel estava aberto. **Feche o Excel** e tente de novo.
 - Ou a planilha não está na pasta certa. Confira a pasta no Passo 2 da PARTE 1.
 
-## Apareceu "Nao foi possivel estabelecer conexao com o servidor"
+## Apareceu "Nao foi possivel conectar ao SIAFI apos 10 tentativas"
 
 O robô não conseguiu entrar no SIAFI. Confira:
 - Você está na rede da SEPLAG ou com a VPN ligada?
@@ -377,7 +413,32 @@ robô percebe isso e retoma de onde parou, mesmo sem nenhuma planilha nova na
 pasta. A mensagem vai dizer algo como *"Sem planilha nova. Retomando 27
 linha(s) pendente(s) do conferência anterior."*
 
-## Apareceu "Nao foi possivel fazer login apos varias tentativas"
+## Apareceu "Não foi possível arquivar a planilha ..." ou "O OneDrive está segurando o arquivo ..."
+
+O robô juntou as planilhas, mas o Windows não deixou mexer em um arquivo:
+alguém está com ele **aberto no Excel**, ou o OneDrive ainda está sincronizando.
+**Nada foi enviado ao SIAFI.**
+
+Feche o arquivo (ou espere um minuto) e acione de novo. O robô **continua de
+onde parou**: não precisa mover nem apagar nada. A mensagem seguinte vai dizer
+*"Consolidação anterior retomada"*; se nesse meio-tempo chegou planilha nova,
+ela fica para a execução seguinte — é só acionar mais uma vez.
+
+## Apareceu "Há um arquivo de conferência parado em Robo (IPU 2)/Python"
+
+Chame o **suporte técnico da DCMEFO**. O robô achou um arquivo de conferência
+na pasta de entrada e não sabe dizer se as linhas dele ainda valem, então
+parou sem enviar nem mover nada. A própria mensagem diz o que o suporte deve
+fazer com o arquivo.
+
+## Apareceu "Senha do SIAFI expirada"
+
+A senha do usuário do robô venceu. **Nenhuma cota foi enviada ao SIAFI** e a
+planilha continua na fila. Entre no SIAFI manualmente, troque a senha e peça
+para o **suporte técnico da DCMEFO** gravar a nova no arquivo `.env` do robô.
+Depois é só acionar de novo.
+
+## Apareceu "Não foi possível fazer login após várias tentativas"
 
 Sua senha do SIAFI pode ter mudado. Peça para o **suporte técnico da DCMEFO** atualizar a senha do robô.
 

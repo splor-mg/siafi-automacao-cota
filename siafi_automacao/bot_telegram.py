@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime
+from html import unescape
 
 import requests
 import urllib3.util.connection
@@ -163,7 +164,9 @@ def enviar(texto):
     novo como texto puro. Sem isso, uma recusa passaria em silencio e a equipe
     simplesmente nao receberia o resultado da execucao.
     """
-    texto = redigir(texto, SEGREDOS)
+    # sem_token alem dos segredos do SIAFI: os avisos de falha deste modulo
+    # repassam a excecao do requests, que traz a URL da API com o token dentro.
+    texto = sem_token(redigir(texto, SEGREDOS))
     try:
         r = requests.post(f'{API}/sendMessage', timeout=30, data={
             'chat_id': CHAT_AUTORIZADO,
@@ -174,9 +177,11 @@ def enviar(texto):
             return
         print(f'[aviso] Telegram recusou a mensagem ({r.status_code}): {r.text}')
         print('[aviso] reenviando como texto puro')
+        # Sem parse_mode o Telegram nao decodifica nada: desfaz o escape, senao
+        # '&lt;' e '&amp;' chegariam ao grupo escritos assim.
         requests.post(f'{API}/sendMessage', timeout=30, data={
             'chat_id': CHAT_AUTORIZADO,
-            'text': texto.replace('<pre>', '').replace('</pre>', ''),
+            'text': unescape(texto.replace('<pre>', '').replace('</pre>', '')),
         })
     except Exception as e:
         print(f'[aviso] falha ao enviar mensagem: {sem_token(str(e))}')
@@ -275,9 +280,9 @@ def executar(quem, chave):
                                 time.time() - inicio, nome=projeto['nome']))
 
     except Exception as e:
-        # Sem isto, o EXECUCAO ficaria preso em rodando=True e todo /rodar
-        # futuro seria recusado ate alguem reiniciar o servico — sem ninguem
-        # no grupo entender por que.
+        # Sem isto, o EXECUCAO ficaria preso em rodando=True e todo /cota ou
+        # /credito futuro seria recusado ate alguem reiniciar o servico — sem
+        # ninguem no grupo entender por que.
         print(f'[erro] falha ao executar o robo: {sem_token(str(e))}')
         enviar(f'Falha ao executar o robô de {projeto["nome"]}: {e}\n'
                f'O log desta tentativa, se houver, está em {os.path.basename(log)}.')
@@ -335,8 +340,10 @@ def tratar(update):
     quem = msg.get('from', {}).get('first_name', 'alguém')
     texto = (msg.get('text') or '').split('@')[0].strip().lower()
 
-    if texto.lstrip('/') in PROJETOS:
-        chave = texto.lstrip('/')
+    # A barra e obrigatoria: sem ela, alguem respondendo so 'cota' a uma
+    # pergunta no grupo dispararia o robo no SIAFI de producao.
+    if texto.startswith('/') and texto[1:] in PROJETOS:
+        chave = texto[1:]
         if not pode_rodar(update, USUARIOS_AUTORIZADOS):
             # Responde em vez de ignorar: quem manda isto esta legitimamente no
             # grupo, e o silencio so viraria chamado de suporte.
@@ -365,7 +372,7 @@ def processar_updates(updates):
 
     for update in updates:
         # Confirma ANTES de tratar. Se o bot cair no meio do tratamento, o
-        # comando nao volta na proxima consulta: um /rodar reentregue
+        # comando nao volta na proxima consulta: um /cota reentregue
         # dispararia o robo sozinho.
         offset = update['update_id'] + 1
         try:

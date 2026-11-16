@@ -339,3 +339,69 @@ def test_token_nao_vaza_para_o_journal(monkeypatch):
 
     assert 'SEGREDO-DO-BOT' not in limpo
     assert '<TOKEN>' in limpo
+
+
+# --- So comando com barra dispara -------------------------------------------
+
+@pytest.mark.parametrize('texto', ['cota', 'credito', 'Cota', 'cota@fulano'])
+def test_palavra_solta_sem_barra_nao_dispara_o_robo(monkeypatch, texto):
+    """Alguem responde 'cota' a uma pergunta no grupo e o robo aprova cota no
+    SIAFI de producao: a barra e o que separa conversa de comando."""
+    import bot_telegram
+    chamadas = []
+    monkeypatch.setattr(bot_telegram, 'comando_rodar',
+                        lambda quem, chave: chamadas.append(chave))
+    monkeypatch.setattr(bot_telegram, 'enviar', lambda *a, **kw: None)
+
+    bot_telegram.tratar({'message': {'text': texto,
+                                     'from': {'first_name': 'Ana'}}})
+
+    assert chamadas == []
+
+
+# --- O que sai para o grupo -------------------------------------------------
+
+class RespostaFalsa:
+    def __init__(self, status_code=200, text=''):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_token_nao_vaza_para_o_grupo(monkeypatch):
+    """Quando o sendDocument falha, a excecao do requests (com a URL e o token
+    dentro) vira texto de mensagem para o grupo. O journal ja era protegido;
+    o grupo, que tem mais gente, nao."""
+    import bot_telegram
+    enviados = []
+
+    def post_falso(url, **kwargs):
+        enviados.append(kwargs['data']['text'])
+        return RespostaFalsa()
+
+    monkeypatch.setattr(bot_telegram, 'TOKEN', '123456:SEGREDO-DO-BOT')
+    monkeypatch.setattr(bot_telegram.requests, 'post', post_falso)
+
+    bot_telegram.enviar('Não consegui enviar o log: Max retries exceeded with '
+                        'url: /bot123456:SEGREDO-DO-BOT/sendDocument')
+
+    assert len(enviados) == 1
+    assert 'SEGREDO-DO-BOT' not in enviados[0]
+
+
+def test_reenvio_como_texto_puro_nao_mostra_entidade_html(monkeypatch):
+    """O reenvio sai sem parse_mode, entao o Telegram nao decodifica nada:
+    '&lt;' chegaria ao grupo escrito assim mesmo."""
+    import bot_telegram
+    enviados = []
+
+    def post_falso(url, **kwargs):
+        enviados.append(kwargs['data'])
+        return RespostaFalsa(400 if len(enviados) == 1 else 200, 'Bad Request')
+
+    monkeypatch.setattr(bot_telegram.requests, 'post', post_falso)
+
+    bot_telegram.enviar('Cabeçalho\n\n<pre>saldo &lt; valor &amp; tal</pre>')
+
+    assert len(enviados) == 2
+    assert 'parse_mode' not in enviados[1]
+    assert enviados[1]['text'] == 'Cabeçalho\n\nsaldo < valor & tal'

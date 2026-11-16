@@ -6,9 +6,11 @@
 # coisa.
 #
 # Codigos de saida:
-#   0   sucesso
-#   10  ja existe uma execucao em andamento (lock tomado)
-#   *   propagado do login.py
+#   0    sucesso
+#   3    senha do SIAFI expirada — nada foi enviado ao SIAFI
+#   10   ja existe uma execucao em andamento (lock tomado)
+#   143  execucao encerrada de fora (SIGTERM); 129 se foi a janela fechada
+#   *    propagado do login.py
 # Sem '-e' de proposito: a falha do 'git pull' precisa apenas avisar e seguir
 # com a versao local, nao abortar a execucao.
 set -uo pipefail
@@ -63,7 +65,39 @@ find "$REPO/data/logs" -maxdepth 1 -type f \
         exit 1
     fi
 
-    PYTHONIOENCODING=utf-8 python siafi_automacao/login.py
-} 2>&1 | tee "$LOG"
+    # Dependencias: o 'git pull' acima pode ter trazido um requirements.txt
+    # novo, e sem isto a maquina so descobriria no ImportError. So reinstala
+    # quando o arquivo mudou desde a ultima instalacao (o carimbo guarda o
+    # sha256 dele), para nao depender de rede a cada execucao. Se o pip falhar,
+    # apenas avisa: melhor rodar com as dependencias atuais do que nao rodar. O
+    # carimbo fica como estava, e a proxima execucao tenta de novo.
+    CARIMBO_REQ="venv/.requirements.sha256"
+    if [ -f requirements.txt ]; then
+        if [ ! -f "$CARIMBO_REQ" ]; then
+            # Primeira execucao com esta checagem: registra o estado atual, que
+            # o setup.sh instalou.
+            sha256sum requirements.txt > "$CARIMBO_REQ"
+        elif ! sha256sum --status -c "$CARIMBO_REQ"; then
+            echo "O requirements.txt mudou: atualizando as dependencias..."
+            if pip install --quiet --retries 1 --timeout 15 -r requirements.txt; then
+                sha256sum requirements.txt > "$CARIMBO_REQ"
+            else
+                echo "[aviso] Nao foi possivel atualizar as dependencias. Rodando com as atuais."
+            fi
+        fi
+    fi
+
+    # PYTHONUNBUFFERED: com a saida num pipe o Python guarda tudo num buffer e
+    # so escreve no fim. A janela do robo.bat ficava muda a execucao inteira, e
+    # um robo travado nao deixava nada no log.
+    PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1 python siafi_automacao/login.py
+} 2>&1 | (
+    # O tee ignora os sinais de encerramento e so termina quando o robo fecha
+    # o pipe. O login.py trata Ctrl+C, SIGTERM (servico do bot reiniciado) e
+    # SIGHUP (janela fechada) devolvendo a planilha; se o tee morresse junto,
+    # esse resgate nao ficaria no log e os prints do robo passariam a falhar.
+    trap '' INT TERM HUP
+    exec tee "$LOG"
+)
 
 exit "${PIPESTATUS[0]}"

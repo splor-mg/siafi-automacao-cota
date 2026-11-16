@@ -2,6 +2,7 @@ import os
 import sys
 import glob
 import shutil
+import signal
 import subprocess
 import time
 from datetime import datetime
@@ -16,6 +17,7 @@ from fluxo_anular import anular
 from fluxo_aprovar import aprovar
 from config import ler_lista_de_uos
 from relato import relato
+from tela import imprimir_tela
 
 # ---------------------------------------------------------------------------
 # Configuracoes
@@ -49,6 +51,9 @@ MOTIVO_UO_BLOQUEADA = os.getenv(
 # retorno. Precisa ser texto nao vazio: e isso que a tira da fila de pendentes
 # e obriga uma conferencia humana antes de reprocessar.
 PROGRESSO_INCERTO = 'INTERROMPIDA - VERIFICAR NO SIAFI'
+
+# Linha pendente com campo que o robo nao consegue ler. Nao vai ao SIAFI.
+PROGRESSO_DADO_INVALIDO = 'Linha com dado inválido na planilha'
 
 # Pasta de ORIGEM (OneDrive sincronizado) de onde o arquivo a processar e
 # MOVIDO para a pasta local. O caminho do Windows  C:/Users/...  e acessado
@@ -87,6 +92,54 @@ def _txt_int(v):
     return str(int(float(v)))
 
 
+def _dizer(texto):
+    """print() que nunca levanta excecao.
+
+    Para os pontos em que o robo ja esta tratando uma falha: se a execucao foi
+    encerrada de fora, quem lia a saida (o tee do rodar.sh, a janela do
+    robo.bat) pode ter morrido junto, e um print que estoura ali interromperia
+    o resgate da planilha."""
+    try:
+        print(texto)
+    except Exception:
+        pass
+
+
+# Sinais com que a execucao e encerrada de fora: SIGTERM e o servico do bot
+# sendo reiniciado ou a maquina desligando; SIGHUP e a janela do robo.bat sendo
+# fechada. Sem tratamento o Python morre na hora, sem passar pelo resgate: a
+# planilha fica orfa na pasta local e a linha em curso fica sem marca.
+SINAIS_DE_ENCERRAMENTO = (signal.SIGTERM, signal.SIGHUP)
+
+
+def _encerrar_por_sinal(signum, _frame):
+    # SystemExit sobe pelo mesmo try/except/finally que ja trata o Ctrl+C.
+    raise SystemExit(128 + signum)
+
+
+def tratar_sinais_de_encerramento():
+    for sinal in SINAIS_DE_ENCERRAMENTO:
+        signal.signal(sinal, _encerrar_por_sinal)
+
+
+def ignorar_sinais_de_encerramento():
+    """Durante o resgate: um segundo sinal (ou um segundo Ctrl+C) cairia no
+    meio da devolucao da planilha."""
+    for sinal in (*SINAIS_DE_ENCERRAMENTO, signal.SIGINT):
+        signal.signal(sinal, signal.SIG_IGN)
+
+
+def motivo_da_interrupcao(erro):
+    """Primeira frase do aviso de execucao interrompida, conforme a causa."""
+    if isinstance(erro, SystemExit):
+        if erro.code in [128 + sinal for sinal in SINAIS_DE_ENCERRAMENTO]:
+            return ("Execução encerrada de fora (serviço do bot reiniciado, "
+                    "janela fechada ou máquina desligando) antes de concluir "
+                    "todas as linhas.")
+        return "Execução interrompida antes de concluir todas as linhas."
+    return f"Execução interrompida por erro: {type(erro).__name__}: {erro}"
+
+
 def mover(origem, destino, tentativas=MOVER_TENTATIVAS, espera=MOVER_ESPERA_SEGUNDOS):
     """Move 'origem' para 'destino', sobrescrevendo se ja existir.
 
@@ -108,13 +161,14 @@ def mover(origem, destino, tentativas=MOVER_TENTATIVAS, espera=MOVER_ESPERA_SEGU
             return
         except PermissionError as e:
             ultimo_erro = e
-            print(
+            # _dizer, e nao print: mover() tambem roda dentro do resgate.
+            _dizer(
                 f"Aviso: destino travado (possivel sincronizacao do OneDrive em andamento). "
                 f"Tentativa {tentativa}/{tentativas} de mover '{os.path.basename(origem)}'. "
                 f"Aguardando {espera}s..."
             )
             time.sleep(espera)
-    print(f"Erro: nao foi possivel mover '{origem}' para '{destino}' apos {tentativas} tentativas.")
+    _dizer(f"Erro: nao foi possivel mover '{origem}' para '{destino}' apos {tentativas} tentativas.")
     raise ultimo_erro
 
 
@@ -129,7 +183,7 @@ def encerrar_emulador(em):
     try:
         em.terminate()
     except Exception as e:
-        print(f"Aviso: falha ao encerrar o emulador (ignorando): {e}")
+        _dizer(f"Aviso: falha ao encerrar o emulador (ignorando): {e}")
 
 
 def conectar_siafi(host, visivel, tentativas=CONEXAO_TENTATIVAS, espera=CONEXAO_ESPERA_SEGUNDOS):
@@ -202,6 +256,23 @@ def abortar_senha_expirada():
     raise SystemExit(3)
 
 
+def aviso_linha_incerta(linha, tela):
+    """Aviso da linha que parou no meio, com o que o SIAFI dizia na hora.
+
+    'tela' sao as linhas devolvidas pelo imprimir_tela(). A linha 1 e onde o
+    SIAFI escreve as mensagens: e ela que diz por que a operacao nao seguiu, e
+    costuma bastar para quem vai conferir saber se a cota entrou ou nao.
+    """
+    aviso = (f"ATENÇÃO: a linha {linha} parou no meio. Não dá para "
+             f"saber se a operação entrou no SIAFI. Confira lá antes de "
+             f"rodar de novo — ela NÃO será reprocessada automaticamente. "
+             f"Para liberá-la, apague a coluna Progresso dessa linha.")
+    mensagem = tela[0].strip() if tela else ''
+    if mensagem:
+        aviso += f"\nNa tela do SIAFI estava: {mensagem}"
+    return aviso
+
+
 def resgatar_planilha(wb, ws, caminho_local, caminho_destino):
     """Devolve a planilha para a pasta de conferencia depois de uma falha.
 
@@ -225,15 +296,16 @@ def resgatar_planilha(wb, ws, caminho_local, caminho_destino):
         formatar_planilha(ws)
         wb.save(caminho_local)
     except Exception as e:
-        print(f"Aviso: nao foi possivel formatar/salvar a planilha no resgate: {e}")
+        _dizer(f"Aviso: nao foi possivel formatar/salvar a planilha no resgate: {e}")
 
     try:
         mover(caminho_local, caminho_destino)
-        print(f"Planilha com o progresso parcial devolvida para: {caminho_destino}")
     except Exception as e:
-        print("")
-        print(f"ERRO: a planilha ficou parada em '{caminho_local}' e nao pode ser devolvida: {e}")
-        print(f"Mova o arquivo manualmente para '{caminho_destino}' antes da proxima execucao.")
+        _dizer("")
+        _dizer(f"ERRO: a planilha ficou parada em '{caminho_local}' e nao pode ser devolvida: {e}")
+        _dizer(f"Mova o arquivo manualmente para '{caminho_destino}' antes da proxima execucao.")
+        return
+    _dizer(f"Planilha com o progresso parcial devolvida para: {caminho_destino}")
 
 
 def organizar_realizados(pasta_origem, pasta_destino):
@@ -454,6 +526,8 @@ def montar_data_row(get, month):
 # ===========================================================================
 if __name__ == "__main__":
 
+    tratar_sinais_de_encerramento()
+
     # -----------------------------------------------------------------------
     # 0) Executa consolida.py e segue direto para o fluxo no SIAFI.
     # -----------------------------------------------------------------------
@@ -625,7 +699,22 @@ if __name__ == "__main__":
         # -------------------------------------------------------------------
         for r in pendentes:
             get = lambda nome: ws.cell(row=r, column=col[nome]).value
-            data_row = montar_data_row(get, month)
+
+            # Campo ilegivel numa linha pendente (conferencia editado a mao):
+            # as planilhas novas passam pela validacao do consolida.py, mas o
+            # conferencia retomado nao. Sem marcar a linha, a conversao
+            # derrubava a execucao, a linha continuava pendente e toda
+            # execucao seguinte parava nela, sem chegar as de baixo.
+            try:
+                data_row = montar_data_row(get, month)
+            except (TypeError, ValueError, OverflowError) as e:
+                relato('linha_pulada',
+                       f"Linha {r}: dado inválido na planilha ({e}). "
+                       f"Não foi enviada ao SIAFI.",
+                       linha=r, motivo='dado inválido na planilha')
+                ws.cell(row=r, column=col['Progresso']).value = PROGRESSO_DADO_INVALIDO
+                wb.save(caminho_local)
+                continue
 
             # IAG 1 e processado normalmente desde 07/10/2026; antes era pulado
             # com 'IAG 1 - Não Realizado'. Os fluxos ja enviam o IAG da planilha
@@ -719,30 +808,50 @@ if __name__ == "__main__":
         # -------------------------------------------------------------------
         # 6) Organiza os .xlsx soltos em Realizados -> Remanejamentos realizados.
         # -------------------------------------------------------------------
-        organizar_realizados(PASTA_REALIZADOS, PASTA_REMANEJAMENTOS_REALIZADOS)
-        print("Pasta Realizados organizada.")
+        #    E faxina: a planilha ja foi processada e devolvida. Se falhar (o
+        #    OneDrive segurando um arquivo), vira aviso — antes derrubava com
+        #    'FALHOU' uma execucao em que todas as linhas tinham dado certo. Os
+        #    arquivos que ficaram soltos sao organizados na proxima execucao.
+        try:
+            organizar_realizados(PASTA_REALIZADOS, PASTA_REMANEJAMENTOS_REALIZADOS)
+            print("Pasta Realizados organizada.")
+        except Exception as e:
+            relato('aviso',
+                   f"As linhas foram processadas, mas não deu para organizar a "
+                   f"pasta Realizados ({type(e).__name__}: {e}). As planilhas "
+                   f"originais continuam nela e serão organizadas na próxima execução.")
 
     except BaseException as e:
-        # BaseException (nao Exception) para cobrir tambem o Ctrl+C do usuario
-        # e os SystemExit(1) de falha de login: em todos esses casos a planilha
-        # ja esta na pasta local e precisa voltar para a de conferencia.
-        print("")
-        if isinstance(e, SystemExit):
-            relato('erro', "Execução interrompida antes de concluir todas as linhas.")
-        else:
-            relato('erro', f"Execução interrompida por erro: {type(e).__name__}: {e}")
+        # BaseException (nao Exception) para cobrir tambem o Ctrl+C do usuario,
+        # os SystemExit(1) de falha de login e o encerramento por sinal: em
+        # todos esses casos a planilha ja esta na pasta local e precisa voltar
+        # para a de conferencia.
+        ignorar_sinais_de_encerramento()
 
-        # A linha que estava em curso pode ter chegado ao SIAFI sem o retorno
-        # ter sido lido. Deixar o Progresso vazio faria a proxima execucao
-        # reprocessa-la as cegas — e duplicar a operacao, se ela tiver entrado.
-        # Marcada, ela sai da fila e alguem precisa conferir antes de liberar.
+        # Primeiro, e em silencio, o que nao pode se perder. A linha que estava
+        # em curso pode ter chegado ao SIAFI sem o retorno ter sido lido.
+        # Deixar o Progresso vazio faria a proxima execucao reprocessa-la as
+        # cegas — e duplicar a operacao, se ela tiver entrado. Marcada, ela sai
+        # da fila e alguem precisa conferir antes de liberar.
         if linha_em_curso is not None:
             ws.cell(row=linha_em_curso, column=col['Progresso']).value = PROGRESSO_INCERTO
-            relato('erro',
-                   f"ATENÇÃO: a linha {linha_em_curso} parou no meio. Não dá para "
-                   f"saber se a operação entrou no SIAFI. Confira lá antes de "
-                   f"rodar de novo — ela NÃO será reprocessada automaticamente. "
-                   f"Para liberá-la, apague a coluna Progresso dessa linha.")
+
+        # Os avisos vem depois e nao podem impedir o resgate. Numa execucao
+        # encerrada de fora, quem lia a saida pode ter morrido junto: ai eles
+        # se perdem, e a planilha nao.
+        try:
+            print("")
+            relato('erro', motivo_da_interrupcao(e))
+
+            # A tela inteira vai para o log, como no robo de credito. 'Keyboard
+            # locked' e so o sintoma: o robo digitou numa posicao protegida
+            # porque o SIAFI nao foi para a tela esperada, e a mensagem que
+            # explica o motivo esta na tela.
+            tela = imprimir_tela(em, 'execução interrompida') if em is not None else []
+            if linha_em_curso is not None:
+                relato('erro', aviso_linha_incerta(linha_em_curso, tela))
+        except Exception:
+            pass
 
         resgatar_planilha(wb, ws, caminho_local, caminho_destino)
         raise

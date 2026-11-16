@@ -50,3 +50,22 @@ def test_resumo_limita_para_caber_na_mensagem_do_telegram():
 
     assert 'e mais 25 problema(s)' in resumo
     assert len(resumo) < 1000
+
+
+def test_xls_antigo_e_recusado_dizendo_o_que_fazer(tmp_path):
+    """O robo nao le .xls: o formato e legado e a biblioteca dele (xlrd) nao
+    esta instalada. A recusa ja acontecia, mas com 'Missing optional
+    dependency xlrd', que ninguem no grupo sabe interpretar — e a consolidacao
+    do dia inteiro fica parada ate alguem entender."""
+    from consolida import validar_todos
+
+    arquivo = tmp_path / 'planilha antiga.xls'
+    # Assinatura OLE2: e por ela que o pandas reconhece um .xls de verdade.
+    arquivo.write_bytes(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1' + b'\x00' * 512)
+
+    erros = validar_todos([str(arquivo)])
+
+    assert len(erros) == 1
+    assert erros[0][0] == 'planilha antiga.xls'
+    assert 'salve como .xlsx' in erros[0][4]
+    assert 'xlrd' not in erros[0][4]

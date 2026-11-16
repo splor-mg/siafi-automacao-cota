@@ -66,9 +66,9 @@ echo "[4/6] Verificando suporte a interface gráfica (WSLg)..."
 if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo ""
     echo "AVISO: WSLg não detectado nesta sessão."
-    echo "O login.py usa Emulator(visible=True), que abre a janela gráfica do x3270."
-    echo "Se o robô falhar ao abrir a janela, altere visible=True para visible=False"
-    echo "em siafi_automacao/login.py para rodar sem interface gráfica."
+    echo "Por padrão o robô abre a janela gráfica do x3270 (SIAFI_VISIVEL=true)."
+    echo "Se ele falhar ao abrir a janela, acrescente a linha SIAFI_VISIVEL=false"
+    echo "ao arquivo .env para rodar sem interface gráfica."
     echo ""
 else
     echo "WSLg disponível (DISPLAY=$DISPLAY)."
@@ -84,7 +84,19 @@ echo "[5/6] Configurando variáveis de ambiente..."
 _win_user=$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n' || true)
 _year=$(date +%Y)
 if [ -n "$_win_user" ]; then
-    _onedrive_sugestao="/mnt/c/Users/${_win_user}/OneDrive - CAMG/@splor/@dcmefo/${_year}/Robo - Remanejamento e aprovacao de cota"
+    # A pasta aparece em lugares diferentes conforme o jeito que o OneDrive de
+    # cada pessoa sincroniza a biblioteca da equipe. Sugere a que existir nesta
+    # máquina; se nenhuma existir ainda, fica a primeira.
+    _onedrive_raiz="/mnt/c/Users/${_win_user}/OneDrive - CAMG"
+    _pasta_robo="@dcmefo/${_year}/Robo - Remanejamento e aprovacao de cota"
+    _onedrive_sugestao="${_onedrive_raiz}/@splor/${_pasta_robo}"
+    for _candidata in "${_onedrive_raiz}/@splor/${_pasta_robo}" \
+                      "${_onedrive_raiz}/General/${_pasta_robo}"; do
+        if [ -d "$_candidata" ]; then
+            _onedrive_sugestao="$_candidata"
+            break
+        fi
+    done
 else
     _onedrive_sugestao=""
 fi

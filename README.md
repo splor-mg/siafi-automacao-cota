@@ -1,167 +1,177 @@
-# Automação SIAFI com py3270
+# siafi-automacao-cota
 
-Automação de operações no SIAFI (Sistema Integrado de Administração Financeira) utilizando Python e emulação de terminal TN3270, desenvolvido para a Cidade Administrativa de Minas Gerais.
+Robô que **aprova e anula cotas orçamentárias** no **SIAFI** (terminal TN3270),
+linha a linha, a partir de planilhas Excel. Roda em Ubuntu/WSL2, controla o
+emulador `x3270`/`s3270` pela biblioteca `py3270` e pode ser acionado pelo
+duplo-clique no `robo.bat` ou pelo comando `/cota` do bot do Telegram.
 
----
+Este repositório também abriga o **bot do Telegram**, que aciona este robô e o
+de crédito ([siafi-automacao-credito](https://github.com/splor-mg/siafi-automacao-credito)).
 
-## Sobre o projeto
+O manual para quem opera o robô no dia a dia, sem nada técnico, é o
+[RUNBOOK.md](RUNBOOK.md).
 
-O SIAFI roda em um terminal TN3270, acessado localmente pelo emulador **pw3270**. Este projeto utiliza a biblioteca **py3270** para controlar o emulador via Python, permitindo automatizar operações repetitivas como aprovação e anulação de cotas orçamentárias, eliminando a necessidade de interação manual com o terminal.
+## O que ele faz
 
----
+1. **Consolida** (`consolida.py`) — valida todos os `.xlsx` das pastas
+   `Remanejamentos` e `Remanejamentos (SEGOV)` do OneDrive e, se nenhum
+   reprovar, junta as linhas no `Conferencia arquivo robo DD.MM.xlsx`, em
+   `Robo (IPU 2)/Python`. Os originais vão para `Realizados`. Rodadas do mesmo
+   dia são apensadas ao mesmo arquivo (coluna `Execução`), e a coluna `Pedido`
+   guarda de qual arquivo cada linha veio.
+2. **Login** no SIAFI (`login.py`, que também orquestra todo o fluxo) — o
+   conferência é movido para a pasta local (`PASTA_LOCAL`), para o robô não
+   depender da sincronização do OneDrive enquanto grava.
+3. **Processa** cada linha pendente — com dados e com a coluna `Progresso`
+   vazia — pelos fluxos `fluxo_aprovar.py` e `fluxo_anular.py` (GLOBAL ou
+   AMARRADO). O resultado de cada linha é gravado e salvo na hora.
+4. **Devolve** a planilha formatada para `Conferencia arquivo robo/` e arruma
+   os originais em `Realizados/Remanejamentos realizados`.
 
-## Funcionalidades
+Não há confirmação no meio do caminho: acionado, o robô vai até o fim.
 
-- Login automático no SIAFI com tratamento de telas de aviso
-- Leitura de planilha Excel com os dados das operações
-- Aprovação de cotas orçamentárias (global e amarrada)
-- Anulação de cotas orçamentárias
-- Captura do retorno do SIAFI (sucesso ou erro) para cada operação
+### Quando algo falha no meio
 
----
+- A planilha **sempre volta** para `Conferencia arquivo robo/` com o progresso
+  parcial. Na execução seguinte, mesmo sem planilha nova, o `consolida.py`
+  encontra as linhas pendentes e o robô retoma de onde parou.
+- A linha que estava em curso recebe `INTERROMPIDA - VERIFICAR NO SIAFI` e
+  **não é reprocessada**: a operação pode ter entrado no SIAFI sem o retorno
+  ter sido lido. Alguém confere e, se for o caso, apaga o `Progresso` dela.
+- Isso vale também para a execução **encerrada de fora**: Ctrl+C, janela do
+  `robo.bat` fechada (SIGHUP) ou serviço do bot reiniciado (SIGTERM).
+- Se a **consolidação** abortar depois de salvar o consolidado — planilha de
+  origem aberta no Excel, OneDrive segurando um arquivo —, a execução seguinte
+  termina a arrumação e processa o arquivo que já estava pronto, em vez de
+  consolidar de novo e perder as planilhas que já tinham sido arquivadas
+  (`retomar_consolidacao_interrompida`, em `consolida.py`).
+- Linha pendente com campo ilegível recebe `Linha com dado inválido na
+  planilha` e as demais seguem.
+- Só `0011-REGISTRO EFETUADO` vira `Ok`. Mensagem que o robô não conhece vira
+  `Erro`, nunca `Ok`.
+- A tela inteira do SIAFI vai para o log (`tela.py`): as 24 linhas numeradas,
+  a régua de colunas, o estado do teclado e a posição do cursor — as mesmas
+  coordenadas do `fill_field()`. Para ver todas:
 
-## Pré-requisitos
+  ```bash
+  grep -A 28 "TELA DO SIAFI" data/logs/robo-*.log
+  ```
 
-### Sistema operacional
-
-O projeto roda no Linux **Ubuntu**, podendo ser utilizado WSL (Windows Subsystem for Linux), instalado diretamente no Windows.
-
-### Dependências do sistema
-
-Com o Ubuntu aberto, instale as dependências necessárias:
-
-```bash
-# Atualiza a lista de pacotes
-sudo apt update
-
-# Instala o emulador x3270 (necessário para o py3270 funcionar)
-sudo apt install x3270
-
-# Instala o s3270 (versão sem interface gráfica, para rodar em background)
-sudo apt install s3270
-
-# Instala o xdotool (controle de janelas, opcional para modo visível)
-sudo apt install xdotool
-
-# Instala o Python e o pip
-sudo apt install python3 python3-pip python3-venv
-```
-
----
-
-## Instalação do projeto
-
-### 1. Clone ou copie os arquivos para o Ubuntu
-
-```bash
-# Cria a pasta do projeto
-clone git@github.com:splor-mg/siafi-automacao.git
-cd siafi_automacao
-```
-
-### 2. Crie e ative o ambiente virtual
-
-```bash
-# Cria o ambiente virtual
-python3 -m venv venv
-
-# Ativa o ambiente virtual
-source venv/bin/activate
-```
-
-### 3. Instale as dependências Python
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## Como usar
-
-### Ativar o ambiente virtual (sempre que abrir o terminal)
-
-```bash
-cd ~/siafi_automacao
-source venv/bin/activate
-```
-
-### Executar o script
-
-```bash
-python teste_py3270.py
-```
-
----
-
-## Estrutura do projeto
+## Estrutura
 
 ```
 siafi_automacao/
-│
-├── venv/                  # Ambiente virtual Python
-├── teste_py3270.py        # Script principal de automação
-├── planilha.xlsx          # Planilha com os dados das operações (a implementar)
-└── README.md              # Este arquivo
+├── login.py               # orquestrador (ponto de entrada)
+├── consolida.py           # validação e consolidação das planilhas de origem
+├── fluxo_aprovar.py       # telas da aprovação de cota
+├── fluxo_anular.py        # telas da anulação de cota
+├── emulador.py            # espera o teclado do mainframe destravar
+├── tela.py                # print da tela do SIAFI no log, para diagnóstico
+├── config.py              # leitura das variáveis que precisam de tratamento
+├── relato.py              # eventos (.jsonl) lidos pelo bot do Telegram
+├── bot_telegram.py        # bot: long-polling, comandos, disparo dos robôs
+└── telegram_mensagens.py  # montagem das mensagens e regras de autorização
+data/logs/                 # robo-*.log e relato-*.jsonl de cada execução
+rodar.sh                   # sequência única de execução (bat e bot usam a mesma)
+robo.bat                   # duplo-clique no Windows -> robo.ps1 -> rodar.sh
+setup.sh                   # prepara uma máquina nova (WSL/Ubuntu)
+instalar_bot.sh            # instala o bot como serviço do systemd
 ```
 
----
+## Configuração
 
-## Fluxo de automação
+Em máquina nova, o duplo-clique no `robo.bat` cuida de tudo: instala o
+WSL/Ubuntu se faltar e roda o `setup.sh`, que instala as dependências, clona o
+repositório, cria a venv e pergunta as variáveis do `.env`.
 
-```
-1. Login no SIAFI
-      ↓
-2. Leitura da planilha Excel
-      ↓
-3. Para cada linha da planilha:
-   ├── Navega até a transação de cotas
-   ├── Preenche os campos (mês, fonte, UO, grupo de despesa...)
-   ├── Executa aprovação ou anulação
-   └── Captura o retorno do SIAFI (sucesso ou erro)
-      ↓
-4. Gera relatório de resultados
+Manualmente: copie `.env.example` para `.env`, preencha, e
+
+```bash
+sudo apt install s3270 x3270 python3-venv
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
----
+`ONEDRIVE_BASE` é o caminho da **pasta** (vista de dentro do WSL, em
+`/mnt/c/...`) que contém `Remanejamentos`, `Robo (IPU 2)`, `Conferencia arquivo
+robo` e `Realizados`. As demais variáveis estão explicadas no `.env.example`.
 
-## Principais bibliotecas utilizadas
+## Execução
 
-| Biblioteca | Descrição | Instalação |
-|------------|-----------|------------|
-| `py3270` | Interface Python para o emulador x3270/s3270 | `pip install py3270` |
-| `openpyxl` | Leitura e escrita de planilhas Excel (.xlsx) | `pip install openpyxl` |
-| `time` | Controle de pausas entre operações | Nativa do Python |
+```bash
+bash rodar.sh
+```
 
----
+O `rodar.sh` pega o lock compartilhado com o robô de crédito (os dois usam o
+mesmo usuário do SIAFI e nunca rodam juntos), faz `git pull` na `main`,
+reinstala as dependências se o `requirements.txt` mudou e executa o
+`login.py`. Códigos de saída:
 
-## Funções principais do py3270
+| Código | Significado |
+|---|---|
+| 0 | Foi até o fim (pode haver linha com erro — veja a coluna `Progresso`) |
+| 1 | Falha (validação reprovada, SIAFI inacessível, execução interrompida) |
+| 3 | Senha do SIAFI expirada; nada foi enviado |
+| 10 | Já existe uma execução (cota ou crédito) em andamento |
+| 129 / 143 | Encerrada de fora: janela fechada (SIGHUP) ou serviço reiniciado (SIGTERM) |
 
-| Função | Descrição |
-|--------|-----------|
-| `Emulator(visible=True)` | Cria o emulador (visível ou invisível) |
-| `em.connect('host')` | Conecta ao servidor SIAFI |
-| `em.wait_for_field()` | Aguarda a tela estar pronta para digitação |
-| `em.fill_field(linha, col, texto, tam)` | Preenche um campo na tela |
-| `em.send_enter()` | Pressiona Enter |
-| `em.send_pf(n)` | Pressiona tecla de função (F1–F24) |
-| `em.string_found(linha, col, texto)` | Verifica se um texto está na posição indicada |
-| `em.string_get(linha, col, tam)` | Lê um trecho de texto da tela |
-| `em.terminate()` | Encerra o emulador |
+## Telegram
 
----
+O `bot_telegram.py` roda como serviço do systemd dentro do WSL
+(`bash instalar_bot.sh`; o passo a passo está na PARTE 3 do RUNBOOK). No grupo
+autorizado ele aceita `/cota`, `/credito`, `/status`, `/log` e `/ajuda`, executa
+o `rodar.sh` do repositório correspondente e monta as mensagens a partir do
+`.jsonl` gravado pelo `relato()`.
 
-## Observações
+- Os tipos de evento do `relato()` e seus campos são um contrato entre o robô
+  e o bot — e entre os dois repositórios. Ele é conferido em
+  `tests/test_contrato_relato.py`, que lê também o código do robô de crédito.
+- O bot carrega o código uma vez só. Depois de mudar `bot_telegram.py`,
+  `telegram_mensagens.py` ou `relato.py`:
 
-- O emulador `x3270` precisa estar instalado e disponível no PATH do sistema para o py3270 funcionar
-- Em modo `visible=True` o script abre a janela gráfica do terminal — útil para testes e depuração
-- Em modo `visible=False` o script roda em segundo plano usando o `s3270` — recomendado para produção
-- Sempre que o SIAFI demorar para responder, utilize `time.sleep()` antes do `wait_for_field()` para evitar o erro `Keyboard locked`
+  ```bash
+  sudo systemctl restart siafi-bot
+  ```
 
----
+  Não reinicie durante uma execução: o systemd encerra o robô junto com o
+  bot. A planilha é devolvida e a linha em curso fica marcada como
+  interrompida, mas o grupo não recebe o resultado.
 
-## Referências
+## Portal Orçamentário
 
-- [py3270 no PyPI](https://pypi.org/project/py3270/)
-- [pw3270 — Perry Werneck](https://github.com/PerryWerneck/pw3270)
-- [x3270 — IBM 3270 Terminal Emulator](http://x3270.bgp.nu/)
+O Portal (repositório `pedidos-cota`) entrega pedidos aprovados salvando um
+`.xlsx` em `Remanejamentos/` e lê o resultado na planilha de conferência. Ele
+não importa nada daqui; o contrato é o formato dos arquivos:
+
+- **Entrada** — as onze colunas da planilha padrão, lidas pelo nome na primeira
+  aba: `UO_COD`, `Grupo`, `IAG`, `Fonte`, `IPU`, `Ação`, `GLOBAL`, `AMARRADO`,
+  `Anular`, `Aprovar`, `UO Financiadora`.
+- **Conferência** — os nomes das colunas na linha 1 (`COLUNAS_CONFERENCIA`, em
+  `consolida.py`). Incluir coluna é seguro; renomear ou repetir, não.
+- **Coluna `Pedido`** — o nome do arquivo de origem, que no arquivo do Portal
+  começa pelo número do pedido.
+- **Textos do `Progresso`** — `Ok`, `Erro`, `INTERROMPIDA - VERIFICAR NO SIAFI`
+  e `Elemento/item não marcado para a UO beneficiada` têm tratamento próprio
+  no Portal.
+- **Pastas e nomes de arquivo** — o Portal reconhece o arquivo que entregou
+  pelo nome, em `Remanejamentos` e onde o robô o arquiva (`Realizados`), e lê o
+  resultado na pasta de conferência e no arquivo morto dela. Mudar o destino
+  dos arquivos, ou renomeá-los ao arquivar, afeta o Portal.
+
+Os quatro primeiros pontos estão amarrados em `tests/test_contrato_portal.py`
+e `tests/test_coluna_pedido.py`; as pastas, não. Se um desses testes falhar, a
+mudança precisa ser combinada com o Portal antes de ir para a `main`.
+
+## Testes
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Os testes não tocam no SIAFI nem no OneDrive. O `tests/test_login_fim_a_fim.py`
+roda o `login.py` inteiro, como subprocesso, com um emulador de mentira no
+lugar do `py3270` e pastas temporárias no lugar do OneDrive. Com o repositório do robô de
+crédito ao lado (`../siafi-automacao-credito`), a suíte confere também o
+contrato do `relato()` dele.
